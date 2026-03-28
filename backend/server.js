@@ -42,6 +42,7 @@ app.use('/api/routes', require('./routes/routes'));
 app.use('/api/assignments', require('./routes/assignments'));
 app.use('/api/tracking', require('./routes/tracking'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/copilot', require('./routes/copilot'));
 
 // ── Health check ──
 app.get('/api/health', (req, res) => {

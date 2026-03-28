@@ -124,6 +124,21 @@ class BackendApiService {
     await _postJson('/api/notifications/trip-event', payload);
   }
 
+  Future<String> askCopilot({
+    required String question,
+    List<Map<String, String>> history = const [],
+  }) async {
+    final payload = await _postJson('/api/copilot/chat', {
+      'question': question,
+      'history': history,
+    });
+    final answer = payload['answer']?.toString().trim() ?? '';
+    if (answer.isEmpty) {
+      throw Exception('Copilot returned an empty response');
+    }
+    return answer;
+  }
+
   Future<Map<String, dynamic>> _getJson(String path) async {
     final token = await _requireToken();
     final response = await _client.get(

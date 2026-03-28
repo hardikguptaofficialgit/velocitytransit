@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/services/backend_api_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_shapes.dart';
 
@@ -13,36 +14,121 @@ class CopilotScreen extends StatefulWidget {
 }
 
 class _CopilotScreenState extends State<CopilotScreen> {
-  final List<Map<String, dynamic>> _messages = [
-    {'isUser': false, 'text': 'Welcome to Velocity Copilot.'},
-    {
-      'isUser': false,
-      'text':
-          'Ask about a destination, nearby routes, or faster transit options and I will help you plan the next move.',
-    },
+  final _api = BackendApiService();
+  final List<_ChatMessage> _messages = [
+    const _ChatMessage(
+      isUser: false,
+      text: 'Welcome to Velocity Copilot.',
+    ),
+    const _ChatMessage(
+      isUser: false,
+      text:
+          'Ask about a destination, nearby routes, ETAs, or faster transit options and I will analyze the available backend data for you.',
+    ),
   ];
-
   final TextEditingController _controller = TextEditingController();
+  bool _isSending = false;
 
-  void _sendMessage() {
-    if (_controller.text.trim().isEmpty) return;
-
+  Future<void> _sendMessage() async {
     final text = _controller.text.trim();
+    if (text.isEmpty || _isSending) return;
+
     setState(() {
-      _messages.add({'isUser': true, 'text': text});
+      _messages.add(_ChatMessage(isUser: true, text: text));
       _controller.clear();
+      _isSending = true;
     });
 
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    try {
+      final answer = await _api.askCopilot(
+        question: text,
+        history: _messages
+            .map(
+              (message) => {
+                'role': message.isUser ? 'user' : 'assistant',
+                'text': message.text,
+              },
+            )
+            .toList(),
+      );
+
       if (!mounted) return;
       setState(() {
-        _messages.add({
-          'isUser': false,
-          'text':
-              "I found a cleaner option for '$text'. The nearest active route has lighter traffic and should save roughly 12 to 14 minutes.",
-        });
+        _messages.add(_ChatMessage(isUser: false, text: answer));
       });
-    });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          _ChatMessage(
+            isUser: false,
+            text: _readableError(error),
+            isError: true,
+          ),
+        );
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+      });
+    }
+  }
+
+  String _readableError(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+    if (message.contains('Authentication token missing')) {
+      return 'Please sign in again before using Copilot.';
+    }
+    if (message.contains('Gemini API key is missing')) {
+      return 'Copilot is not configured on the backend yet.';
+    }
+    if (message.contains('503') || message.contains('500')) {
+      return 'Copilot is temporarily unavailable. Please try again in a moment.';
+    }
+    return message.isEmpty ? 'Copilot could not answer right now.' : message;
+  }
+
+  Widget _buildTypingBubble() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundCard,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(18),
+            topRight: Radius.circular(18),
+            bottomLeft: Radius.circular(6),
+            bottomRight: Radius.circular(18),
+          ),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.textSecondary.withValues(alpha: 0.8),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Analyzing transit data...',
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -63,18 +149,24 @@ class _CopilotScreenState extends State<CopilotScreen> {
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
-                itemCount: _messages.length,
+                itemCount: _messages.length + (_isSending ? 1 : 0),
                 itemBuilder: (context, index) {
+                  if (_isSending && index == _messages.length) {
+                    return _buildTypingBubble()
+                        .animate()
+                        .fadeIn(duration: 220.ms);
+                  }
+
                   final msg = _messages[index];
-                  final isUser = msg['isUser'] as bool;
                   return Align(
-                    alignment: isUser
+                    alignment: msg.isUser
                         ? Alignment.centerRight
                         : Alignment.centerLeft,
                     child:
                         _buildMessageBubble(
-                              text: msg['text'] as String,
-                              isUser: isUser,
+                              text: msg.text,
+                              isUser: msg.isUser,
+                              isError: msg.isError,
                             )
                             .animate()
                             .fadeIn(duration: 320.ms)
@@ -197,7 +289,23 @@ class _CopilotScreenState extends State<CopilotScreen> {
     );
   }
 
-  Widget _buildMessageBubble({required String text, required bool isUser}) {
+  Widget _buildMessageBubble({
+    required String text,
+    required bool isUser,
+    bool isError = false,
+  }) {
+    final bubbleColor = isUser
+        ? const Color(0xFFE8EEF9)
+        : isError
+            ? AppColors.error.withValues(alpha: 0.08)
+            : AppColors.backgroundCard;
+    final borderColor = isUser
+        ? const Color(0xFFC9D5EB)
+        : isError
+            ? AppColors.error.withValues(alpha: 0.22)
+            : AppColors.border;
+    final textColor = isError ? AppColors.error : AppColors.textPrimary;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       constraints: BoxConstraints(
@@ -205,16 +313,14 @@ class _CopilotScreenState extends State<CopilotScreen> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: isUser ? const Color(0xFFE8EEF9) : AppColors.backgroundCard,
+        color: bubbleColor,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(18),
           topRight: const Radius.circular(18),
           bottomLeft: Radius.circular(isUser ? 18 : 6),
           bottomRight: Radius.circular(isUser ? 6 : 18),
         ),
-        border: Border.all(
-          color: isUser ? const Color(0xFFC9D5EB) : AppColors.border,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,7 +328,7 @@ class _CopilotScreenState extends State<CopilotScreen> {
           Text(
             text,
             style: GoogleFonts.spaceGrotesk(
-              color: AppColors.textPrimary,
+              color: textColor,
               fontSize: 15,
               fontWeight: FontWeight.w500,
               height: 1.45,
@@ -263,6 +369,7 @@ class _CopilotScreenState extends State<CopilotScreen> {
                 controller: _controller,
                 minLines: 1,
                 maxLines: 4,
+                enabled: !_isSending,
                 onSubmitted: (_) => _sendMessage(),
                 style: GoogleFonts.spaceGrotesk(
                   color: AppColors.textPrimary,
@@ -287,7 +394,7 @@ class _CopilotScreenState extends State<CopilotScreen> {
           ),
           const SizedBox(width: 12),
           GestureDetector(
-            onTap: _sendMessage,
+            onTap: _isSending ? null : _sendMessage,
             child: Container(
               width: 52,
               height: 52,
@@ -306,4 +413,16 @@ class _CopilotScreenState extends State<CopilotScreen> {
       ),
     );
   }
+}
+
+class _ChatMessage {
+  const _ChatMessage({
+    required this.isUser,
+    required this.text,
+    this.isError = false,
+  });
+
+  final bool isUser;
+  final String text;
+  final bool isError;
 }
