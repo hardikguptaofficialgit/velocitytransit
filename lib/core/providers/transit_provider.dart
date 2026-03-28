@@ -148,12 +148,18 @@ class TransitNotifier extends Notifier<TransitState> {
         _api.fetchMyAssignment().catchError((_) => null),
       ]);
 
-      final routes = results[0] as List<TransitRoute>;
+      final remoteRoutes = results[0] as List<TransitRoute>;
       final rawBuses = results[1] as Map<String, Map<String, dynamic>>;
       final assignments = results[2] as List<BusAssignment>;
       final livePositions = results[3] as List<LiveBusSnapshot>;
-      final alerts = results[4] as List<TransitAlert>;
+      final remoteAlerts = results[4] as List<TransitAlert>;
       final myAssignment = results[5] as BusAssignment?;
+      final routes = remoteRoutes.isNotEmpty
+          ? remoteRoutes
+          : (state.routes.isNotEmpty ? state.routes : SimulationData.routes);
+      final alerts = remoteAlerts.isNotEmpty
+          ? remoteAlerts
+          : (state.alerts.isNotEmpty ? state.alerts : SimulationData.sampleAlerts);
 
       final mergedBuses = _mergeTransitData(
         routes: routes,
@@ -225,13 +231,30 @@ class TransitNotifier extends Notifier<TransitState> {
       return _buildDemoBuses(routes);
     }
 
-    final activeRouteIds = buses.map((bus) => bus.routeId).where((id) => id.isNotEmpty).toSet();
-    final missingRoutes = routes.where((route) => !activeRouteIds.contains(route.id)).toList();
-    return [...buses, ..._buildDemoBuses(missingRoutes)];
+    final busCountsByRoute = <String, int>{};
+    for (final bus in buses) {
+      if (bus.routeId.isEmpty) continue;
+      busCountsByRoute.update(bus.routeId, (count) => count + 1, ifAbsent: () => 1);
+    }
+
+    final supplementalDemoBuses = _buildDemoBuses(
+      routes,
+      existingBusCounts: busCountsByRoute,
+      targetPerRoute: 6,
+    );
+    return [...buses, ...supplementalDemoBuses];
   }
 
-  List<Bus> _buildDemoBuses(List<TransitRoute> routes) {
-    final demos = SimulationData.initialBusesForRoutes(routes);
+  List<Bus> _buildDemoBuses(
+    List<TransitRoute> routes, {
+    Map<String, int> existingBusCounts = const {},
+    int targetPerRoute = 6,
+  }) {
+    final demos = SimulationData.supplementalBusesForRoutes(
+      routes,
+      existingBusCounts: existingBusCounts,
+      targetPerRoute: targetPerRoute,
+    );
     final routesById = {for (final route in routes) route.id: route};
     return demos
         .map(

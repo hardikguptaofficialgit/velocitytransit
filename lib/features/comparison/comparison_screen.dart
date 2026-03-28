@@ -68,7 +68,13 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
               itemBuilder: (context, routeIndex) {
                 final route = routes[routeIndex];
                 final busesOnRoute =
-                    state.buses.where((b) => b.routeId == route.id).toList();
+                    state.buses.where((b) => b.routeId == route.id).toList()
+                      ..sort((a, b) {
+                        if (a.isDemo != b.isDemo) {
+                          return a.isDemo ? 1 : -1;
+                        }
+                        return a.estimatedDelay.compareTo(b.estimatedDelay);
+                      });
 
                 if (busesOnRoute.isEmpty) return const SizedBox.shrink();
 
@@ -168,12 +174,32 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          OccupancyBadge(
-                                            level: bus.occupancy,
-                                            compact: true,
-                                          ),
+                                       Row(
+                                         children: [
+                                           Container(
+                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                             decoration: BoxDecoration(
+                                               color: bus.isDemo
+                                                   ? AppColors.primaryMuted
+                                                   : Colors.green.withValues(alpha: 0.12),
+                                               borderRadius: BorderRadius.circular(999),
+                                             ),
+                                             child: Text(
+                                               bus.isDemo ? 'Demo' : 'Live',
+                                               style: TextStyle(
+                                                 color: bus.isDemo
+                                                     ? AppColors.primary
+                                                     : Colors.green.shade700,
+                                                 fontSize: 10,
+                                                 fontWeight: FontWeight.w700,
+                                               ),
+                                             ),
+                                           ),
+                                           const SizedBox(width: 6),
+                                           OccupancyBadge(
+                                             level: bus.occupancy,
+                                             compact: true,
+                                           ),
                                           const SizedBox(width: 6),
                                           Text(
                                             '${bus.speed.round()} km/h',
@@ -295,8 +321,26 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                     ),
+                    ),
+                  ),
+              if (bus.isDemo) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryMuted,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'DEMO',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
+              ],
               const SizedBox(width: 10),
               EtaDisplay(minutes: eta),
             ],

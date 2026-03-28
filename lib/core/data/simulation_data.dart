@@ -228,6 +228,17 @@ class SimulationData {
   }
 
   static List<Bus> initialBusesForRoutes(List<TransitRoute> routes) {
+    return supplementalBusesForRoutes(
+      routes,
+      targetPerRoute: 6,
+    );
+  }
+
+  static List<Bus> supplementalBusesForRoutes(
+    List<TransitRoute> routes, {
+    Map<String, int> existingBusCounts = const {},
+    int targetPerRoute = 6,
+  }) {
     final occupancies = OccupancyLevel.values;
     final buses = <Bus>[];
     final driverNames = [
@@ -250,27 +261,34 @@ class SimulationData {
 
     for (var routeIndex = 0; routeIndex < routes.length; routeIndex++) {
       final route = routes[routeIndex];
-      final busCount = (route.stops.length <= 6 ? 4 : 5) + (routeIndex.isEven ? 1 : 0);
+      final existingCount = existingBusCounts[route.id] ?? 0;
+      final routeTarget = max(
+        targetPerRoute,
+        (route.stops.length <= 6 ? 4 : 5) + (routeIndex.isEven ? 1 : 0),
+      );
+      final busCount = max(0, routeTarget - existingCount);
+
       for (var i = 0; i < busCount; i++) {
-        final seededOffset = ((routeIndex * 17) + (i * 11)) % 100;
+        final busSlot = existingCount + i;
+        final seededOffset = ((routeIndex * 17) + (busSlot * 11)) % 100;
         final progress = (seededOffset / 100).clamp(0.04, 0.96);
         final pos = _positionOnRoute(route, progress);
-        final speed = 16 + ((routeIndex * 9 + i * 6) % 23).toDouble();
+        final speed = 16 + ((routeIndex * 9 + busSlot * 6) % 23).toDouble();
         final currentStopIndex =
             ((progress * route.stops.length).floor()).clamp(0, route.stops.length - 1);
-        final occupancy = occupancies[(routeIndex + i) % occupancies.length];
+        final occupancy = occupancies[(routeIndex + busSlot) % occupancies.length];
         final heading = _headingOnRoute(route, progress);
         final estimatedDelay = speed < 20 ? 3 : speed < 26 ? 1 : 0;
         final isHoldingAtStop = i == busCount - 1 && routeIndex.isOdd;
         buses.add(
           Bus(
-            id: '${route.id}_bus_$i',
-            number: '${route.shortName}-${110 + (routeIndex * 10) + i}',
+            id: '${route.id}_demo_bus_$busSlot',
+            number: '${route.shortName}-${210 + (routeIndex * 12) + busSlot}',
             routeId: route.id,
             routeName: route.name,
             routeShortName: route.shortName,
-            driverId: 'demo_driver_${routeIndex}_$i',
-            driverName: driverNames[(routeIndex * 3 + i) % driverNames.length],
+            driverId: 'demo_driver_${routeIndex}_$busSlot',
+            driverName: driverNames[(routeIndex * 3 + busSlot) % driverNames.length],
             position: pos,
             heading: heading,
             speed: isHoldingAtStop ? 8 : speed,

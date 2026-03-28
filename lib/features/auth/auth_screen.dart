@@ -117,6 +117,9 @@ class _AuthScreenState extends State<AuthScreen> {
                 ? 'Password must be at least 6 characters.'
                 : message.contains('network-request-failed')
                     ? 'Network issue detected. Please try again.'
+                    : message.contains('com.google.android.gms.common.api: 10') ||
+                            message.contains('sign_in_failed')
+                        ? 'Google sign-in is not enabled for this Android build yet. Add the app SHA-1 to Firebase, download a fresh google-services.json, and rebuild the app.'
                     : message.replaceFirst('Exception: ', '');
   }
 
@@ -274,56 +277,31 @@ class _AuthScreenState extends State<AuthScreen> {
       children: [
         SizedBox(
           height: 56,
-          child: OutlinedButton.icon(
+          child: _buildActionButton(
             onPressed: _loading ? null : _handleGoogleAuth,
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: AppColors.border),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 0,
-            ),
-            icon: Image.asset(
+            label: 'Continue with Google',
+            trailing: Image.asset(
               'assets/google_g_logo.png',
-              width: 24,
-              height: 24,
-            ),
-            label: Text(
-              'Continue with Google',
-              style: GoogleFonts.spaceGrotesk(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              width: 22,
+              height: 22,
             ),
           ),
         ),
         const SizedBox(height: 16),
         SizedBox(
           height: 56,
-          child: OutlinedButton.icon(
+          child: _buildActionButton(
             onPressed: () {
               setState(() {
                 _showEmailForm = true;
                 _error = null;
               });
             },
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: AppColors.border),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            icon: const Icon(Icons.email_outlined, color: AppColors.textPrimary, size: 24),
-            label: Text(
-              'Continue with Email',
-              style: GoogleFonts.spaceGrotesk(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+            label: 'Continue with Email',
+            trailing: const Icon(
+              Icons.email_outlined,
+              color: AppColors.textPrimary,
+              size: 22,
             ),
           ),
         ),
@@ -488,6 +466,45 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildActionButton({
+    required VoidCallback? onPressed,
+    required String label,
+    required Widget trailing,
+  }) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        elevation: 0,
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 22),
+          Expanded(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 22,
+            child: Center(child: trailing),
+          ),
+        ],
+      ),
     );
   }
 

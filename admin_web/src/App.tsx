@@ -45,6 +45,12 @@ interface BusData {
   status: string;
 }
 
+interface RouteData {
+  id: string;
+  name: string;
+  shortName: string;
+}
+
 interface Assignment {
   id: string;
   busId: string;
@@ -201,6 +207,7 @@ function Dashboard() {
   const [authError, setAuthError] = useState('');
 
   const [buses, setBuses] = useState<BusData[]>([]);
+  const [routes, setRoutes] = useState<RouteData[]>([]);
   const [drivers, setDrivers] = useState<UserProfile[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -208,6 +215,7 @@ function Dashboard() {
 
   const [newBusNumber, setNewBusNumber] = useState('');
   const [newBusCapacity, setNewBusCapacity] = useState(40);
+  const [newBusRouteId, setNewBusRouteId] = useState('');
   const [assignBusId, setAssignBusId] = useState('');
   const [assignDriverId, setAssignDriverId] = useState('');
 
@@ -257,10 +265,11 @@ function Dashboard() {
     if (!token) return;
 
     try {
-      const [busResponse, userResponse, assignmentResponse] = await Promise.all([
+      const [busResponse, userResponse, assignmentResponse, routeResponse] = await Promise.all([
         apiFetch('/api/buses', token),
         apiFetch('/api/users', token),
         apiFetch('/api/assignments?active=true', token),
+        apiFetch('/api/routes', token),
       ]);
 
       const users = userResponse.users || [];
@@ -268,6 +277,7 @@ function Dashboard() {
       setAllUsers(users);
       setDrivers(users.filter((item: UserProfile) => item.role === 'driver'));
       setAssignments(assignmentResponse.assignments || []);
+      setRoutes(routeResponse.routes || []);
     } catch (error) {
       console.error('Fetch error:', error);
     }
@@ -302,10 +312,15 @@ function Dashboard() {
     if (!newBusNumber.trim()) return;
     await apiFetch('/api/buses', token, {
       method: 'POST',
-      body: JSON.stringify({ busNumber: newBusNumber, capacity: newBusCapacity }),
+      body: JSON.stringify({
+        busNumber: newBusNumber,
+        capacity: newBusCapacity,
+        routeId: newBusRouteId || null,
+      }),
     });
     setNewBusNumber('');
     setNewBusCapacity(40);
+    setNewBusRouteId('');
     fetchAll();
   };
 
@@ -341,6 +356,7 @@ function Dashboard() {
         driverId: assignDriverId,
         busNumber: bus?.busNumber || '',
         driverName: driver?.name || '',
+        routeId: bus?.routeId || null,
       }),
     });
     setAssignBusId('');
@@ -352,6 +368,17 @@ function Dashboard() {
     await apiFetch(`/api/assignments/${id}/deactivate`, token, { method: 'PATCH' });
     fetchAll();
   };
+
+  const routeLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        routes.map((route) => [
+          route.id,
+          `${route.shortName || route.id} · ${route.name || route.id}`,
+        ]),
+      ) as Record<string, string>,
+    [routes],
+  );
 
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: Activity },
@@ -542,6 +569,21 @@ function Dashboard() {
                   onChange={(event) => setNewBusCapacity(Number(event.target.value))}
                 />
               </div>
+              <div className="field-group grow">
+                <label className="field-label">Route</label>
+                <select
+                  className="input-field"
+                  value={newBusRouteId}
+                  onChange={(event) => setNewBusRouteId(event.target.value)}
+                >
+                  <option value="">No route yet</option>
+                  {routes.map((route) => (
+                    <option key={route.id} value={route.id}>
+                      {route.shortName} · {route.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button className="btn-primary" onClick={addBus}>
                 <Plus size={15} />
                 Add Bus
@@ -676,7 +718,7 @@ function Dashboard() {
                     .filter((item) => item.status === 'active')
                     .map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.busNumber}
+                        {item.busNumber} {item.routeId ? `· ${routeLabelById[item.routeId] || item.routeId}` : '· No route'}
                       </option>
                     ))}
                 </select>
@@ -716,6 +758,11 @@ function Dashboard() {
                     <span className="list-title">{assignment.busNumber || assignment.busId}</span>
                     <ArrowRight size={14} />
                     <span className="list-title">{assignment.driverName || assignment.driverId}</span>
+                    {assignment.routeId && (
+                      <span className="list-subtitle inline">
+                        {routeLabelById[assignment.routeId] || assignment.routeId}
+                      </span>
+                    )}
                     <span className="list-subtitle inline">
                       Since {new Date(assignment.startedAt).toLocaleString()}
                     </span>

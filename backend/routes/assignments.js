@@ -80,6 +80,14 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
       return res.status(400).json({ error: 'busId and driverId are required' });
     }
 
+    const busDoc = await db.collection('buses').doc(busId).get();
+    if (!busDoc.exists) {
+      return res.status(404).json({ error: 'Bus not found' });
+    }
+    const busData = busDoc.data() || {};
+    const resolvedRouteId = routeId || busData.routeId || null;
+    const resolvedBusNumber = busNumber || busData.busNumber || '';
+
     // Check if bus is already assigned
     const existingBus = await db.collection('assignments')
       .where('busId', '==', busId)
@@ -103,9 +111,9 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
     const assignmentData = {
       busId,
       driverId,
-      busNumber: busNumber || '',
+      busNumber: resolvedBusNumber,
       driverName: driverName || '',
-      routeId: routeId || null,
+      routeId: resolvedRouteId,
       assignedBy: req.user.uid,
       isActive: true,
       startedAt: new Date().toISOString(),
@@ -117,9 +125,9 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
     // Also update the live tracking collection to mark bus as online
     await db.collection('liveLocations').doc(busId).set({
       busId,
-      busNumber: busNumber || '',
+      busNumber: resolvedBusNumber,
       driverId,
-      routeId: routeId || null,
+      routeId: resolvedRouteId,
       isOnline: true,
       lat: 0,
       lng: 0,
@@ -131,8 +139,8 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
     await sendTransitNotification({
       type: 'trip_started',
       title: 'Trip Started',
-      body: `${busNumber || busId} is now live${routeId ? ` on route ${routeId}` : ''}.`,
-      routeId: routeId || null,
+      body: `${resolvedBusNumber || busId} is now live${resolvedRouteId ? ` on route ${resolvedRouteId}` : ''}.`,
+      routeId: resolvedRouteId,
       busId,
       audience: 'passenger',
       dedupeKey: `assignment:start:${busId}:${driverId}`,
