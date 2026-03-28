@@ -54,9 +54,10 @@ router.get('/drivers', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const snapshot = await db.collection('users')
       .where('role', '==', 'driver')
-      .where('isActive', '==', true)
       .get();
-    const drivers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const drivers = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(user => user.isActive === true);
     res.json({ drivers });
   } catch (err) {
     res.status(500).json({ error: err.message });

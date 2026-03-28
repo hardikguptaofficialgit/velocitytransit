@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "828589273527",
+    "project_id": "velocity-transit-7f723",
+    "storage_bucket": "velocity-transit-7f723.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:828589273527:android:d5f265bb77b6f4445b3832",
+        "android_client_info": {
+          "package_name": "com.velocitytransit.velocity_transit"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "828589273527-8ldilclbk6ntgd1n8haj1j2hruvk8qln.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "a8b228c4747a431da6a91df40fa273b4149a853d"
+          }
+        },
+        {
+          "client_id": "828589273527-5ia9odkjkfed204scpq5vdhhqke62872.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLuft775Gu9mQMWR3muVUHFoAPCjkaFcc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "828589273527-5ia9odkjkfed204scpq5vdhhqke62872.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

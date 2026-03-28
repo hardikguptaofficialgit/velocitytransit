@@ -228,25 +228,64 @@ class SimulationData {
   }
 
   static List<Bus> initialBusesForRoutes(List<TransitRoute> routes) {
-    final rng = Random(42);
     final occupancies = OccupancyLevel.values;
     final buses = <Bus>[];
+    final driverNames = [
+      'Amit',
+      'Neha',
+      'Rohan',
+      'Priya',
+      'Sanjay',
+      'Kiran',
+      'Meera',
+      'Arjun',
+      'Vikram',
+      'Isha',
+      'Kabir',
+      'Naina',
+      'Rahul',
+      'Pooja',
+      'Dev',
+    ];
 
-    for (var route in routes) {
-      final busCount = 2 + rng.nextInt(2);
+    for (var routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      final route = routes[routeIndex];
+      final busCount = (route.stops.length <= 6 ? 4 : 5) + (routeIndex.isEven ? 1 : 0);
       for (var i = 0; i < busCount; i++) {
-        final progress = i / busCount;
+        final seededOffset = ((routeIndex * 17) + (i * 11)) % 100;
+        final progress = (seededOffset / 100).clamp(0.04, 0.96);
         final pos = _positionOnRoute(route, progress);
+        final speed = 16 + ((routeIndex * 9 + i * 6) % 23).toDouble();
+        final currentStopIndex =
+            ((progress * route.stops.length).floor()).clamp(0, route.stops.length - 1);
+        final occupancy = occupancies[(routeIndex + i) % occupancies.length];
+        final heading = _headingOnRoute(route, progress);
+        final estimatedDelay = speed < 20 ? 3 : speed < 26 ? 1 : 0;
+        final isHoldingAtStop = i == busCount - 1 && routeIndex.isOdd;
         buses.add(
           Bus(
             id: '${route.id}_bus_$i',
-            number: '${route.shortName}-${100 + i}',
+            number: '${route.shortName}-${110 + (routeIndex * 10) + i}',
             routeId: route.id,
+            routeName: route.name,
+            routeShortName: route.shortName,
+            driverId: 'demo_driver_${routeIndex}_$i',
+            driverName: driverNames[(routeIndex * 3 + i) % driverNames.length],
             position: pos,
-            speed: 20 + rng.nextDouble() * 25,
-            occupancy: occupancies[rng.nextInt(3)],
-            currentStopIndex: (progress * route.stops.length).floor(),
+            heading: heading,
+            speed: isHoldingAtStop ? 8 : speed,
+            occupancy: occupancy,
+            currentStopIndex: currentStopIndex,
             progress: progress,
+            isOnline: true,
+            estimatedDelay: isHoldingAtStop ? 4 : estimatedDelay,
+            status: isHoldingAtStop ? 'boarding' : 'active',
+            suggestedAction: _demoSuggestedAction(
+              route: route,
+              progress: progress,
+              occupancy: occupancy,
+              estimatedDelay: isHoldingAtStop ? 4 : estimatedDelay,
+            ),
           ),
         );
       }
@@ -444,6 +483,38 @@ class SimulationData {
     }
     points.add(stops.last.position);
     return points;
+  }
+
+  static double _headingOnRoute(TransitRoute route, double progress) {
+    if (route.pathPoints.length < 2) return 0;
+    final scaledIndex = progress * (route.pathPoints.length - 1);
+    final index = scaledIndex.floor().clamp(0, route.pathPoints.length - 2);
+    final from = route.pathPoints[index];
+    final to = route.pathPoints[index + 1];
+    final deltaLat = to.latitude - from.latitude;
+    final deltaLng = to.longitude - from.longitude;
+    return atan2(deltaLng, deltaLat) * 180 / pi;
+  }
+
+  static String _demoSuggestedAction({
+    required TransitRoute route,
+    required double progress,
+    required OccupancyLevel occupancy,
+    required int estimatedDelay,
+  }) {
+    final nextStopIndex =
+        ((progress * route.stops.length).floor() + 1).clamp(0, route.stops.length - 1);
+    final nextStop = route.stops[nextStopIndex].name;
+    if (estimatedDelay >= 4) {
+      return 'Crowd building near $nextStop. Allow a few extra minutes.';
+    }
+    if (occupancy == OccupancyLevel.low) {
+      return 'Low crowd service. Best option for a comfortable ride.';
+    }
+    if (progress >= 0.75) {
+      return 'Approaching final sector via $nextStop.';
+    }
+    return 'Serving $nextStop next on ${route.shortName}.';
   }
 
   static List<DemandZone> demandZones = [

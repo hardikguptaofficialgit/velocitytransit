@@ -117,4 +117,50 @@ router.post('/trip-event', verifyToken, roleCheck('driver', 'admin'), async (req
   }
 });
 
+router.post('/broadcast', verifyToken, roleCheck('admin'), async (req, res) => {
+  try {
+    const {
+      title,
+      body,
+      audience = 'all',
+      type = 'service_update',
+      routeId = null,
+      busId = null,
+    } = req.body;
+
+    if (!title || !body) {
+      return res.status(400).json({ error: 'title and body are required' });
+    }
+
+    if (!['all', 'passenger', 'driver', 'admin'].includes(audience)) {
+      return res.status(400).json({ error: 'audience must be all, passenger, driver, or admin' });
+    }
+
+    const result = await sendTransitNotification({
+      type,
+      title,
+      body,
+      routeId,
+      busId,
+      audience,
+      dedupeKey: `admin:broadcast:${audience}:${title}:${body}:${routeId || 'none'}:${busId || 'none'}`,
+    });
+
+    await db.collection('adminBroadcasts').add({
+      title,
+      body,
+      audience,
+      type,
+      routeId,
+      busId,
+      createdBy: req.user.uid,
+      createdAt: new Date().toISOString(),
+    });
+
+    res.json({ message: 'Broadcast sent', result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

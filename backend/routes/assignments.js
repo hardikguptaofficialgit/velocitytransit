@@ -16,8 +16,14 @@ router.get('/', verifyToken, roleCheck('admin'), async (req, res) => {
     if (req.query.active === 'true') {
       query = query.where('isActive', '==', true);
     }
-    const snapshot = await query.orderBy('startedAt', 'desc').get();
-    const assignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await query.get();
+    const assignments = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => {
+        const aTime = Date.parse(a.startedAt || '') || 0;
+        const bTime = Date.parse(b.startedAt || '') || 0;
+        return bTime - aTime;
+      });
     res.json({ assignments });
   } catch (err) {
     res.status(500).json({ error: err.message });

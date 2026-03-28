@@ -191,6 +191,14 @@ Build release APK:
 flutter build apk --release
 ```
 
+
+## Admin Panel
+
+- **URL:** https://velocityappx.vercel.app/
+- **Email:** hardikgupta8792@gmail.com
+- **Password:** hardik91
+
+---
 ## Project Structure
 
 ```text

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/doodle_icons.dart';
+
 import '../../core/data/models.dart';
 import '../../core/providers/transit_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/doodle_icons.dart';
 import '../../core/widgets/shared_widgets.dart';
 
 class RoutePlannerScreen extends ConsumerStatefulWidget {
@@ -21,9 +22,9 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
     with SingleTickerProviderStateMixin {
   late final TextEditingController _fromController;
   late final TextEditingController _toController;
+  late final AnimationController _animController;
   List<RouteSuggestion> _suggestions = [];
   bool _hasSearched = false;
-  late AnimationController _animController;
 
   @override
   void initState() {
@@ -31,7 +32,7 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
     _fromController = TextEditingController(
       text: widget.initialFrom?.trim().isNotEmpty == true
           ? widget.initialFrom
-          : 'Marine Drive',
+          : 'Main Hub',
     );
     _toController = TextEditingController(
       text: widget.initialTo?.trim().isNotEmpty == true
@@ -42,8 +43,7 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    // Auto-search on init
-    Future.delayed(const Duration(milliseconds: 300), _search);
+    Future.delayed(const Duration(milliseconds: 250), _search);
   }
 
   @override
@@ -67,9 +67,9 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
   }
 
   void _swapLocations() {
-    final temp = _fromController.text;
+    final currentFrom = _fromController.text;
     _fromController.text = _toController.text;
-    _toController.text = temp;
+    _toController.text = currentFrom;
     _search();
   }
 
@@ -86,18 +86,15 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
       ),
       body: Column(
         children: [
-          // â”€â”€ Input Section â”€â”€
           Container(
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
               color: AppColors.backgroundCard,
-              border: Border(
-                bottom: BorderSide(color: AppColors.border),
-              ),
+              border: Border(bottom: BorderSide(color: AppColors.border)),
             ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Route dots
                 Column(
                   children: [
                     Container(
@@ -124,7 +121,6 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
                   ],
                 ),
                 const SizedBox(width: 16),
-                // Input fields
                 Expanded(
                   child: Column(
                     children: [
@@ -171,11 +167,18 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
                         ),
                         onSubmitted: (_) => _search(),
                       ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _search,
+                          child: const Text('Find Best Route'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Swap button
                 GestureDetector(
                   onTap: _swapLocations,
                   child: Container(
@@ -197,57 +200,58 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
               ],
             ),
           ),
-
-          // â”€â”€ Suggestions â”€â”€
           if (_hasSearched) ...[
             const SectionHeader(title: 'Smart Route Suggestions'),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _suggestions.length,
-                itemBuilder: (context, index) {
-                  return TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: 1),
-                    duration: Duration(milliseconds: 400 + index * 100),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, value, child) {
-                      return Opacity(
-                        opacity: value,
-                        child: Transform.translate(
-                          offset: Offset(0, 20 * (1 - value)),
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _RouteCard(
-                        suggestion: _suggestions[index],
-                        onTap: () {
-                          Navigator.pushNamed(
-                            context,
-                            AppRouter.routeDetails,
-                            arguments: _suggestions[index].route.id,
-                          );
-                        },
-                      ),
+              child: _suggestions.isEmpty
+                  ? const _NoRoutesFound()
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _suggestions.length,
+                      itemBuilder: (context, index) {
+                        return TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: 1),
+                          duration: Duration(milliseconds: 400 + index * 100),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, value, child) {
+                            return Opacity(
+                              opacity: value,
+                              child: Transform.translate(
+                                offset: Offset(0, 20 * (1 - value)),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _RouteCard(
+                              suggestion: _suggestions[index],
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  AppRouter.routeDetails,
+                                  arguments: _suggestions[index].route.id,
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ] else
-            Expanded(
+            const Expanded(
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    DoodleIcons.route(
+                    Icon(
+                      Icons.alt_route_rounded,
                       size: 64,
                       color: AppColors.textTertiary,
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
+                    SizedBox(height: 16),
+                    Text(
                       'Enter source and destination',
                       style: TextStyle(
                         color: AppColors.textTertiary,
@@ -265,10 +269,13 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
 }
 
 class _RouteCard extends StatelessWidget {
+  const _RouteCard({
+    required this.suggestion,
+    required this.onTap,
+  });
+
   final RouteSuggestion suggestion;
   final VoidCallback onTap;
-
-  const _RouteCard({required this.suggestion, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -276,8 +283,10 @@ class _RouteCard extends StatelessWidget {
 
     return VtCard(
       onTap: onTap,
-      borderColor: suggestion.isFastest ? AppColors.primary.withValues(alpha: 0.4) : null,
+      borderColor:
+          suggestion.isFastest ? AppColors.primary.withValues(alpha: 0.4) : null,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -325,7 +334,7 @@ class _RouteCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${suggestion.stopsCount} stops Â· ${suggestion.transfers} transfer${suggestion.transfers != 1 ? 's' : ''} Â· Walk ${suggestion.walkDistance}',
+                      '${suggestion.stopsCount} stops · ${suggestion.activeBuses} active bus${suggestion.activeBuses == 1 ? '' : 'es'} · ${suggestion.transfers} transfer${suggestion.transfers != 1 ? 's' : ''}',
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -338,10 +347,19 @@ class _RouteCard extends StatelessWidget {
               EtaDisplay(minutes: suggestion.etaMinutes),
             ],
           ),
-
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (suggestion.fromStopName != null)
+                _RouteInfoPill(label: 'Board', value: suggestion.fromStopName!),
+              if (suggestion.toStopName != null)
+                _RouteInfoPill(label: 'Drop', value: suggestion.toStopName!),
+              _RouteInfoPill(label: 'Walk', value: suggestion.walkDistance),
+            ],
+          ),
           const SizedBox(height: 14),
-
-          // Mini route preview
           _MiniRoutePreview(route: route),
         ],
       ),
@@ -349,22 +367,65 @@ class _RouteCard extends StatelessWidget {
   }
 }
 
-/// Visual mini route preview
-class _MiniRoutePreview extends StatelessWidget {
-  final TransitRoute route;
+class _RouteInfoPill extends StatelessWidget {
+  const _RouteInfoPill({
+    required this.label,
+    required this.value,
+  });
 
-  const _MiniRoutePreview({required this.route});
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
-    final color = AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundElevated,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniRoutePreview extends StatelessWidget {
+  const _MiniRoutePreview({required this.route});
+
+  final TransitRoute route;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length];
 
     return SizedBox(
       height: 32,
       child: Row(
         children: [
           for (var i = 0; i < route.stops.length; i++) ...[
-            // Stop dot
             Container(
               width: i == 0 || i == route.stops.length - 1 ? 10 : 6,
               height: i == 0 || i == route.stops.length - 1 ? 10 : 6,
@@ -375,7 +436,6 @@ class _MiniRoutePreview extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
             ),
-            // Connector
             if (i < route.stops.length - 1)
               Expanded(
                 child: Container(
@@ -385,6 +445,48 @@ class _MiniRoutePreview extends StatelessWidget {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _NoRoutesFound extends StatelessWidget {
+  const _NoRoutesFound();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.route_rounded,
+              size: 56,
+              color: AppColors.textTertiary,
+            ),
+            SizedBox(height: 14),
+            Text(
+              'No strong route match found for that trip.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Try stop names like Main Hub, City Center, or Terminal 1.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

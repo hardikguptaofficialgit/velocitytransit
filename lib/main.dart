@@ -38,9 +38,20 @@ class _VelocityTransitAppState extends ConsumerState<VelocityTransitApp> {
     super.initState();
     ref.listenManual(authStateProvider, (_, next) async {
       final user = next.asData?.value;
-      if (user == null) return;
+      if (user == null) {
+        ref.read(selectedRoleProvider.notifier).setRole(null);
+        return;
+      }
 
-      final role = ref.read(selectedRoleProvider) ?? AppRoleChoice.passenger;
+      var role = ref.read(selectedRoleProvider) ?? AppRoleChoice.passenger;
+      try {
+        final profile = await ref.read(authServiceProvider).fetchCurrentProfile();
+        role = profile.isDriver
+            ? AppRoleChoice.driver
+            : AppRoleChoice.passenger;
+        ref.read(selectedRoleProvider.notifier).setRole(role);
+      } catch (_) {}
+
       await NotificationService.instance.initialize(
         authService: ref.read(authServiceProvider),
         role: role,

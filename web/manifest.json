@@ -1,6 +1,6 @@
 {
-    "name": "velocity_transit",
-    "short_name": "velocity_transit",
+    "name": "Velocity Transit",
+    "short_name": "Velocity Transit",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

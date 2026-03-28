@@ -17,7 +17,9 @@ The `.env` file is already created. Just ensure:
 ```
 PORT=4000
 FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://localhost:5173,http://localhost:3000,https://velocityappx.vercel.app
+ADMIN_EMAILS=admin@example.com
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ### 3. Run
@@ -31,6 +33,11 @@ npm start      # production
 ### 4. Test
 ```
 GET http://localhost:4000/api/health
+```
+
+Production backend:
+```
+https://velocity.linkitapp.in
 ```
 
 ## API Endpoints

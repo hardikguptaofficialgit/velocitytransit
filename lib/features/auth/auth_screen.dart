@@ -26,7 +26,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLogin = true;
   bool _loading = false;
-  bool _showEmailForm = false; // Controls whether to show options or the form
+  bool _showEmailForm = false;
   String? _error;
 
   bool get _isDriverLogin => widget.role == AppRoleChoice.driver;
@@ -142,7 +142,7 @@ class _AuthScreenState extends State<AuthScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.58),
+                  color: Colors.white.withValues(alpha: 0.65),
                 ),
               ),
             ),
@@ -152,21 +152,27 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Container(
-                    padding: const EdgeInsets.all(32),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(24),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.65),
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildHeader(roleIcon, roleAccent, roleLabel),
-                        const SizedBox(height: 24),
-                        _buildInfoBanner(roleAccent),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 32),
                         if (_error != null) _buildErrorBanner(),
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),
@@ -192,13 +198,13 @@ class _AuthScreenState extends State<AuthScreen> {
     return Row(
       children: [
         Container(
-          width: 52,
-          height: 52,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: accent.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
           ),
-          child: Icon(icon, color: accent, size: 26),
+          child: Icon(icon, color: accent, size: 28),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -206,22 +212,23 @@ class _AuthScreenState extends State<AuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _isLogin ? '$roleLabel Login' : '$roleLabel Sign Up',
+                _isLogin ? 'Welcome Back' : 'Create Account',
                 style: GoogleFonts.spaceGrotesk(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
+                  height: 1.1,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
-                _isDriverLogin
-                    ? 'Manage your live trips.'
-                    : 'Access nearby ETAs & alerts.',
+                _isLogin
+                    ? 'Log in to your $roleLabel account'
+                    : 'Sign up as a $roleLabel',
                 style: GoogleFonts.spaceGrotesk(
-                  fontSize: 14,
-                  height: 1.5,
+                  fontSize: 15,
                   color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -231,47 +238,14 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildInfoBanner(Color accent) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundSheet,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, color: accent, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              _isDriverLogin
-                  ? 'Driver access is enabled only for accounts assigned by an admin.'
-                  : 'Use your email or continue with Google to get started.',
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 13,
-                height: 1.5,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildErrorBanner() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.error.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.error.withValues(alpha: 0.18),
-          ),
+          color: AppColors.error.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
@@ -283,7 +257,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 style: GoogleFonts.spaceGrotesk(
                   color: AppColors.error,
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -299,7 +273,7 @@ class _AuthScreenState extends State<AuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          height: 54,
+          height: 56,
           child: OutlinedButton.icon(
             onPressed: _loading ? null : _handleGoogleAuth,
             style: OutlinedButton.styleFrom(
@@ -308,29 +282,18 @@ class _AuthScreenState extends State<AuthScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
+              elevation: 0,
             ),
-            icon: Container(
-              width: 24,
+            icon: Image.asset(
+              'assets/google_g_logo.png',
               height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.backgroundLight,
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                'G',
-                style: GoogleFonts.spaceGrotesk(
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                ),
-              ),
+              width: 24,
             ),
             label: Text(
               'Continue with Google',
               style: GoogleFonts.spaceGrotesk(
                 color: AppColors.textPrimary,
-                fontSize: 15,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -338,12 +301,12 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 54,
+          height: 56,
           child: OutlinedButton.icon(
             onPressed: () {
               setState(() {
                 _showEmailForm = true;
-                _error = null; // Clear any existing errors
+                _error = null;
               });
             },
             style: OutlinedButton.styleFrom(
@@ -353,18 +316,18 @@ class _AuthScreenState extends State<AuthScreen> {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
-            icon: const Icon(Icons.email_outlined, color: AppColors.textPrimary, size: 22),
+            icon: const Icon(Icons.email_outlined, color: AppColors.textPrimary, size: 24),
             label: Text(
               'Continue with Email',
               style: GoogleFonts.spaceGrotesk(
                 color: AppColors.textPrimary,
-                fontSize: 15,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 32),
         _buildBottomActions(roleAccent),
       ],
     );
@@ -386,11 +349,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         _error = null;
                       });
                     },
-              icon: const Icon(Icons.arrow_back_rounded),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
               padding: EdgeInsets.zero,
-              alignment: Alignment.centerLeft,
+              constraints: const BoxConstraints(),
               color: AppColors.textSecondary,
             ),
+            const SizedBox(width: 12),
             Text(
               _isLogin ? 'Sign in with Email' : 'Register with Email',
               style: GoogleFonts.spaceGrotesk(
@@ -401,14 +365,14 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         if (!_isLogin) ...[
           _buildTextField(
             controller: _nameController,
             hint: 'Full Name',
             icon: Icons.person_outline_rounded,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
         ],
         _buildTextField(
           controller: _emailController,
@@ -416,16 +380,16 @@ class _AuthScreenState extends State<AuthScreen> {
           icon: Icons.email_outlined,
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _buildTextField(
           controller: _passwordController,
           hint: 'Password',
           icon: Icons.lock_outline_rounded,
           obscure: true,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 32),
         SizedBox(
-          height: 54,
+          height: 56,
           child: FilledButton(
             onPressed: _loading ? null : _handleEmailAuth,
             style: FilledButton.styleFrom(
@@ -433,12 +397,12 @@ class _AuthScreenState extends State<AuthScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
-              elevation: 0, // Flat design
+              elevation: 0,
             ),
             child: _loading
                 ? const SizedBox(
-                    width: 22,
-                    height: 22,
+                    width: 24,
+                    height: 24,
                     child: CircularProgressIndicator(
                       color: Colors.white,
                       strokeWidth: 2.5,
@@ -454,7 +418,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         _buildBottomActions(roleAccent),
       ],
     );
@@ -463,10 +427,8 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _buildBottomActions(Color roleAccent) {
     return Column(
       children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               _isLogin ? "Don't have an account?" : 'Already have an account?',
@@ -476,8 +438,9 @@ class _AuthScreenState extends State<AuthScreen> {
                 fontWeight: FontWeight.w500,
               ),
             ),
-            TextButton(
-              onPressed: _loading
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: _loading
                   ? null
                   : () {
                       setState(() {
@@ -485,36 +448,42 @@ class _AuthScreenState extends State<AuthScreen> {
                         _error = null;
                       });
                     },
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
               child: Text(
-                _isLogin ? 'Create one' : 'Sign in',
+                _isLogin ? 'Sign Up' : 'Log In',
                 style: GoogleFonts.spaceGrotesk(
                   color: roleAccent,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        TextButton.icon(
-          onPressed: _loading
+        const SizedBox(height: 24),
+        InkWell(
+          onTap: _loading
               ? null
               : () => Navigator.pushReplacementNamed(
                     context,
                     AppRouter.roleSelection,
                   ),
-          icon: Icon(Icons.arrow_back_rounded, color: AppColors.textTertiary, size: 18),
-          label: Text(
-            'Back to role selection',
-            style: GoogleFonts.spaceGrotesk(
-              color: AppColors.textTertiary,
-              fontWeight: FontWeight.w500,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back_rounded, color: AppColors.textTertiary, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Change role',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -542,28 +511,28 @@ class _AuthScreenState extends State<AuthScreen> {
         hintText: hint,
         hintStyle: GoogleFonts.spaceGrotesk(
           color: AppColors.textTertiary,
-          fontSize: 14,
+          fontSize: 15,
         ),
         prefixIcon: Icon(
           icon,
           color: AppColors.textTertiary,
-          size: 20,
+          size: 22,
         ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: AppColors.backgroundLight.withValues(alpha: 0.5),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AppColors.primary, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       ),
     );
   }

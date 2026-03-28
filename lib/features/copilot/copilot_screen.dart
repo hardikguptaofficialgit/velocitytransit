@@ -68,10 +68,11 @@ class _CopilotScreenState extends State<CopilotScreen> {
         );
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isSending = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 

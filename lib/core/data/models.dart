@@ -325,17 +325,23 @@ class RouteSuggestion {
     required this.route,
     required this.etaMinutes,
     required this.stopsCount,
+    required this.activeBuses,
     this.transfers = 0,
     this.walkDistance = '200m',
     this.isFastest = false,
+    this.fromStopName,
+    this.toStopName,
   });
 
   final TransitRoute route;
   final int etaMinutes;
   final int stopsCount;
+  final int activeBuses;
   final int transfers;
   final String walkDistance;
   final bool isFastest;
+  final String? fromStopName;
+  final String? toStopName;
 }
 
 class TransitAlert {

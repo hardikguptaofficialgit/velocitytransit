@@ -78,7 +78,6 @@ class TransitState {
 
 class TransitNotifier extends Notifier<TransitState> {
   final RoadRoutingService _routingService = const RoadRoutingService();
-  final Random _random = Random();
   Timer? _refreshTimer;
   LatLng? _lastNetworkAnchor;
   bool _isRefreshingNetwork = false;
@@ -112,7 +111,13 @@ class TransitNotifier extends Notifier<TransitState> {
       _syncLivePositions(next.livePositions);
     });
 
+    final initialRoutes = SimulationData.routes;
     return TransitState(
+      buses: _buildDemoBuses(initialRoutes),
+      routes: initialRoutes,
+      alerts: SimulationData.sampleAlerts,
+      favorites: SimulationData.sampleFavorites,
+      isSimulationRunning: true,
       passengerAnchor: SimulationData.defaultAnchor,
       demandZones: SimulationData.demandZonesForAnchor(SimulationData.defaultAnchor),
     );
@@ -365,20 +370,134 @@ class TransitNotifier extends Notifier<TransitState> {
   }
 
   List<RouteSuggestion> getSuggestions(String from, String to) {
-    return state.routes
-        .map((route) {
-          final eta = 5 + _random.nextInt(20);
-          return RouteSuggestion(
+    final fromQuery = _normalizeQuery(from);
+    final toQuery = _normalizeQuery(to);
+    final includeAllRoutes = fromQuery.isEmpty && toQuery.isEmpty;
+    final suggestions = <_RankedSuggestion>[];
+
+    for (final route in state.routes) {
+      final busesOnRoute = getBusesOnRoute(route.id);
+      final fromMatch = _findBestStopMatch(route, fromQuery);
+      final toMatch = _findBestStopMatch(route, toQuery);
+      final routeMatches =
+          route.name.toLowerCase().contains(fromQuery) ||
+          route.name.toLowerCase().contains(toQuery) ||
+          route.shortName.toLowerCase().contains(fromQuery) ||
+          route.shortName.toLowerCase().contains(toQuery);
+
+      final hasUsefulMatch =
+          includeAllRoutes || routeMatches || fromMatch != null || toMatch != null;
+      if (!hasUsefulMatch) {
+        continue;
+      }
+
+      var score = 0;
+      if (routeMatches) score += 35;
+      if (fromMatch != null) score += fromMatch.score + 40;
+      if (toMatch != null) score += toMatch.score + 40;
+
+      var transfers = 1;
+      if (fromMatch != null && toMatch != null) {
+        if (fromMatch.index <= toMatch.index) {
+          score += 90;
+          transfers = 0;
+        } else {
+          score += 20;
+          transfers = 1;
+        }
+      } else if (fromMatch != null || toMatch != null) {
+        score += 15;
+      } else if (includeAllRoutes) {
+        score += 10;
+      }
+
+      score += busesOnRoute.length * 8;
+      final avgDelay = busesOnRoute.isEmpty
+          ? 2
+          : (busesOnRoute.fold<int>(0, (sum, bus) => sum + bus.estimatedDelay) /
+                  busesOnRoute.length)
+              .round();
+      final avgSpeed = busesOnRoute.isEmpty
+          ? 22
+          : busesOnRoute.fold<double>(0, (sum, bus) => sum + bus.speed) /
+              busesOnRoute.length;
+      final spanStops = fromMatch != null && toMatch != null
+          ? (toMatch.index - fromMatch.index).abs().clamp(2, route.stops.length)
+          : route.stops.length.clamp(3, 8);
+      final eta =
+          (spanStops * 3 + avgDelay + max(0, 28 - avgSpeed.round()) ~/ 6)
+              .clamp(6, 38);
+      final walkDistance = '${140 + max(0, 5 - busesOnRoute.length) * 55}m';
+
+      suggestions.add(
+        _RankedSuggestion(
+          score: score,
+          suggestion: RouteSuggestion(
             route: route,
             etaMinutes: eta,
             stopsCount: route.stops.length,
-            transfers: eta > 18 ? 1 : 0,
-            walkDistance: '${120 + _random.nextInt(300)}m',
-            isFastest: state.routes.isNotEmpty && route.id == state.routes.first.id,
-          );
-        })
-        .toList()
-      ..sort((a, b) => a.etaMinutes.compareTo(b.etaMinutes));
+            activeBuses: busesOnRoute.length,
+            transfers: transfers,
+            walkDistance: walkDistance,
+            fromStopName: fromMatch?.stop.name,
+            toStopName: toMatch?.stop.name,
+          ),
+        ),
+      );
+    }
+
+    suggestions.sort((a, b) {
+      final scoreCompare = b.score.compareTo(a.score);
+      if (scoreCompare != 0) return scoreCompare;
+      final etaCompare = a.suggestion.etaMinutes.compareTo(b.suggestion.etaMinutes);
+      if (etaCompare != 0) return etaCompare;
+      return b.suggestion.activeBuses.compareTo(a.suggestion.activeBuses);
+    });
+
+    final ranked = suggestions.map((entry) => entry.suggestion).take(5).toList();
+    if (ranked.isEmpty && state.routes.isNotEmpty) {
+      final fallback = state.routes.take(3).map((route) {
+        final busesOnRoute = getBusesOnRoute(route.id);
+        return RouteSuggestion(
+          route: route,
+          etaMinutes: 10 + route.stops.length,
+          stopsCount: route.stops.length,
+          activeBuses: busesOnRoute.length,
+          transfers: 1,
+          walkDistance: '260m',
+        );
+      }).toList();
+      if (fallback.isNotEmpty) {
+        fallback[0] = RouteSuggestion(
+          route: fallback[0].route,
+          etaMinutes: fallback[0].etaMinutes,
+          stopsCount: fallback[0].stopsCount,
+          activeBuses: fallback[0].activeBuses,
+          transfers: fallback[0].transfers,
+          walkDistance: fallback[0].walkDistance,
+          isFastest: true,
+          fromStopName: fallback[0].fromStopName,
+          toStopName: fallback[0].toStopName,
+        );
+      }
+      return fallback;
+    }
+
+    if (ranked.isNotEmpty) {
+      ranked[0] = RouteSuggestion(
+        route: ranked[0].route,
+        etaMinutes: ranked[0].etaMinutes,
+        stopsCount: ranked[0].stopsCount,
+        activeBuses: ranked[0].activeBuses,
+        transfers: ranked[0].transfers,
+        walkDistance: ranked[0].walkDistance,
+        isFastest: true,
+        fromStopName: ranked[0].fromStopName,
+        toStopName: ranked[0].toStopName,
+      );
+    }
+
+    return ranked;
   }
 }
 
@@ -414,6 +533,51 @@ int _estimateCurrentStopIndex(LatLng position, TransitRoute route) {
     }
   }
   return bestIndex;
+}
+
+String _normalizeQuery(String value) => value.trim().toLowerCase();
+
+_StopMatch? _findBestStopMatch(TransitRoute route, String query) {
+  if (query.isEmpty) return null;
+  _StopMatch? best;
+  for (var index = 0; index < route.stops.length; index++) {
+    final stop = route.stops[index];
+    final name = stop.name.toLowerCase();
+    final score = name == query
+        ? 100
+        : name.startsWith(query)
+        ? 80
+        : name.contains(query)
+        ? 60
+        : 0;
+    if (score == 0) continue;
+    if (best == null || score > best.score) {
+      best = _StopMatch(stop: stop, index: index, score: score);
+    }
+  }
+  return best;
+}
+
+class _StopMatch {
+  const _StopMatch({
+    required this.stop,
+    required this.index,
+    required this.score,
+  });
+
+  final BusStop stop;
+  final int index;
+  final int score;
+}
+
+class _RankedSuggestion {
+  const _RankedSuggestion({
+    required this.score,
+    required this.suggestion,
+  });
+
+  final int score;
+  final RouteSuggestion suggestion;
 }
 
 double _estimateProgress(LatLng position, TransitRoute route) {

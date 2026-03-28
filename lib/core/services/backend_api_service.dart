@@ -124,6 +124,26 @@ class BackendApiService {
     await _postJson('/api/notifications/trip-event', payload);
   }
 
+  Future<void> sendAdminNotification({
+    required String title,
+    required String body,
+    String audience = 'all',
+    String type = 'service_update',
+    String? routeId,
+    String? busId,
+  }) async {
+    final payload = <String, dynamic>{
+      'title': title,
+      'body': body,
+      'audience': audience,
+      'type': type,
+      'routeId': routeId,
+      'busId': busId,
+    }..removeWhere((_, value) => value == null || value == '');
+
+    await _postJson('/api/notifications/broadcast', payload);
+  }
+
   Future<String> askCopilot({
     required String question,
     List<Map<String, String>> history = const [],
