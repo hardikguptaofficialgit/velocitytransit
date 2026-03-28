@@ -205,6 +205,9 @@ function Dashboard() {
   const [tab, setTab] = useState<TabId>('overview');
   const [token, setToken] = useState('');
   const [authError, setAuthError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
 
   const [buses, setBuses] = useState<BusData[]>([]);
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -280,8 +283,27 @@ function Dashboard() {
       setRoutes(routeResponse.routes || []);
     } catch (error) {
       console.error('Fetch error:', error);
+      setActionError(getErrorMessage(error));
     }
   }, [token]);
+
+  const runAdminAction = useCallback(
+    async (work: () => Promise<void>, successMessage: string) => {
+      setActionLoading(true);
+      setActionError('');
+      setActionMessage('');
+      try {
+        await work();
+        await fetchAll();
+        setActionMessage(successMessage);
+      } catch (error) {
+        setActionError(getErrorMessage(error));
+      } finally {
+        setActionLoading(false);
+      }
+    },
+    [fetchAll],
+  );
 
   useEffect(() => {
     if (!token) return;
@@ -310,63 +332,69 @@ function Dashboard() {
 
   const addBus = async () => {
     if (!newBusNumber.trim()) return;
-    await apiFetch('/api/buses', token, {
-      method: 'POST',
-      body: JSON.stringify({
-        busNumber: newBusNumber,
-        capacity: newBusCapacity,
-        routeId: newBusRouteId || null,
-      }),
-    });
-    setNewBusNumber('');
-    setNewBusCapacity(40);
-    setNewBusRouteId('');
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch('/api/buses', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          busNumber: newBusNumber,
+          capacity: newBusCapacity,
+          routeId: newBusRouteId || null,
+        }),
+      });
+      setNewBusNumber('');
+      setNewBusCapacity(40);
+      setNewBusRouteId('');
+    }, 'Bus added successfully.');
   };
 
   const deleteBus = async (id: string) => {
-    await apiFetch(`/api/buses/${id}`, token, { method: 'DELETE' });
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch(`/api/buses/${id}`, token, { method: 'DELETE' });
+    }, 'Bus updated successfully.');
   };
 
   const promoteToDriver = async (uid: string) => {
-    await apiFetch(`/api/users/${uid}/role`, token, {
-      method: 'PATCH',
-      body: JSON.stringify({ role: 'driver' }),
-    });
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch(`/api/users/${uid}/role`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: 'driver' }),
+      });
+    }, 'User promoted to driver.');
   };
 
   const demoteToPassenger = async (uid: string) => {
-    await apiFetch(`/api/users/${uid}/role`, token, {
-      method: 'PATCH',
-      body: JSON.stringify({ role: 'passenger' }),
-    });
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch(`/api/users/${uid}/role`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: 'passenger' }),
+      });
+    }, 'Driver moved back to passenger.');
   };
 
   const assignBus = async () => {
     if (!assignBusId || !assignDriverId) return;
     const bus = buses.find((item) => item.id === assignBusId);
     const driver = drivers.find((item) => item.uid === assignDriverId);
-    await apiFetch('/api/assignments', token, {
-      method: 'POST',
-      body: JSON.stringify({
-        busId: assignBusId,
-        driverId: assignDriverId,
-        busNumber: bus?.busNumber || '',
-        driverName: driver?.name || '',
-        routeId: bus?.routeId || null,
-      }),
-    });
-    setAssignBusId('');
-    setAssignDriverId('');
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch('/api/assignments', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          busId: assignBusId,
+          driverId: assignDriverId,
+          busNumber: bus?.busNumber || '',
+          driverName: driver?.name || '',
+          routeId: bus?.routeId || null,
+        }),
+      });
+      setAssignBusId('');
+      setAssignDriverId('');
+    }, 'Assignment created successfully.');
   };
 
   const deactivateAssignment = async (id: string) => {
-    await apiFetch(`/api/assignments/${id}/deactivate`, token, { method: 'PATCH' });
-    fetchAll();
+    await runAdminAction(async () => {
+      await apiFetch(`/api/assignments/${id}/deactivate`, token, { method: 'PATCH' });
+    }, 'Assignment stopped successfully.');
   };
 
   const routeLabelById = useMemo(
@@ -470,6 +498,13 @@ function Dashboard() {
       </aside>
 
       <main className="main-panel">
+        {(actionError || actionMessage) && (
+          <div className={`message ${actionError ? 'error' : 'success'}`}>
+            <AlertCircle size={16} />
+            <span>{actionError || actionMessage}</span>
+          </div>
+        )}
+
         {tab === 'overview' && (
           <section className="content-section">
             <div className="section-head">
@@ -584,9 +619,9 @@ function Dashboard() {
                   ))}
                 </select>
               </div>
-              <button className="btn-primary" onClick={addBus}>
+              <button className="btn-primary" onClick={addBus} disabled={actionLoading}>
                 <Plus size={15} />
-                Add Bus
+                {actionLoading ? 'Saving...' : 'Add Bus'}
               </button>
             </div>
 
@@ -604,7 +639,7 @@ function Dashboard() {
                       </p>
                     </div>
                   </div>
-                  <button className="btn-danger" onClick={() => deleteBus(bus.id)}>
+                  <button className="btn-danger" onClick={() => deleteBus(bus.id)} disabled={actionLoading}>
                     <Trash2 size={14} />
                     Remove
                   </button>
@@ -649,9 +684,9 @@ function Dashboard() {
                           <p className="list-subtitle">{driver.email}</p>
                         </div>
                       </div>
-                      <button className="btn-danger" onClick={() => demoteToPassenger(driver.uid)}>
-                        Remove Driver
-                      </button>
+                        <button className="btn-danger" onClick={() => demoteToPassenger(driver.uid)} disabled={actionLoading}>
+                          Remove Driver
+                        </button>
                     </div>
                   ))}
                 </div>
@@ -684,9 +719,9 @@ function Dashboard() {
                             <p className="list-subtitle">{item.email}</p>
                           </div>
                         </div>
-                        <button className="btn-secondary" onClick={() => promoteToDriver(item.uid)}>
+                        <button className="btn-secondary" onClick={() => promoteToDriver(item.uid)} disabled={actionLoading}>
                           <ArrowRight size={14} />
-                          Make Driver
+                          {actionLoading ? 'Updating...' : 'Make Driver'}
                         </button>
                       </div>
                     ))}
@@ -740,9 +775,9 @@ function Dashboard() {
                 </select>
               </div>
 
-              <button className="btn-primary" onClick={assignBus}>
+              <button className="btn-primary" onClick={assignBus} disabled={actionLoading}>
                 <Radio size={15} />
-                Assign
+                {actionLoading ? 'Assigning...' : 'Assign'}
               </button>
             </div>
 
@@ -767,7 +802,7 @@ function Dashboard() {
                       Since {new Date(assignment.startedAt).toLocaleString()}
                     </span>
                   </div>
-                  <button className="btn-danger" onClick={() => deactivateAssignment(assignment.id)}>
+                  <button className="btn-danger" onClick={() => deactivateAssignment(assignment.id)} disabled={actionLoading}>
                     Stop Tracking
                   </button>
                 </div>

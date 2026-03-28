@@ -14,11 +14,43 @@
       },
       "oauth_client": [
         {
+          "client_id": "828589273527-3r78oj1jq1qbsuch0reimil7po44ucq5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "c0212ad245f29dc44c41e3ac09a82feaf1803d3e"
+          }
+        },
+        {
           "client_id": "828589273527-8ldilclbk6ntgd1n8haj1j2hruvk8qln.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.velocitytransit.velocity_transit",
             "certificate_hash": "a8b228c4747a431da6a91df40fa273b4149a853d"
+          }
+        },
+        {
+          "client_id": "828589273527-a5i074qhm0av92potd96hn7e9a7prmc7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "8fb698abb8d318e22bf48fd2c0a28f97d17a6fbc"
+          }
+        },
+        {
+          "client_id": "828589273527-j080fjaerd6dieqibslvm7e8d9je44vh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "cec9224bb90986ccf2fe187b1948005e4148de41"
+          }
+        },
+        {
+          "client_id": "828589273527-vo4f5qeacjb2m40m712b5306qbkk81ts.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "34a0541922f4176d7c05c80ca75723f3300e4feb"
           }
         },
         {

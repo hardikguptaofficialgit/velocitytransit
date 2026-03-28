@@ -36,12 +36,27 @@ router.patch('/:uid/role', verifyToken, roleCheck('admin'), async (req, res) => 
       return res.status(400).json({ error: 'Role must be passenger or driver' });
     }
 
-    await db.collection('users').doc(uid).update({ 
-      role, 
-      updatedAt: new Date().toISOString() 
-    });
+    const userRef = db.collection('users').doc(uid);
+    const existingDoc = await userRef.get();
+    const existingData = existingDoc.exists ? existingDoc.data() : {};
+    const nextUser = {
+      uid,
+      email: existingData?.email || '',
+      name: existingData?.name || existingData?.email?.split('@')?.[0] || uid,
+      phone: existingData?.phone || '',
+      avatar: existingData?.avatar || '',
+      isActive: existingData?.isActive !== false,
+      createdAt: existingData?.createdAt || new Date().toISOString(),
+      role,
+      updatedAt: new Date().toISOString(),
+    };
 
-    res.json({ message: `User ${uid} role updated to ${role}` });
+    await userRef.set(nextUser, { merge: true });
+
+    res.json({
+      message: `User ${uid} role updated to ${role}`,
+      user: nextUser,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
