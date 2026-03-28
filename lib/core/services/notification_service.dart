@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
@@ -14,7 +15,11 @@ import 'backend_api_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: AppConfig.firebaseOptions);
+  if (kIsWeb) {
+    await Firebase.initializeApp(options: AppConfig.webFirebaseOptions);
+  } else {
+    await Firebase.initializeApp();
+  }
 }
 
 class NotificationService {

@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/app_config.dart';
@@ -13,7 +14,16 @@ import 'core/router/app_router.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: AppConfig.firebaseOptions);
+  String? startupError;
+  try {
+    if (kIsWeb) {
+      await Firebase.initializeApp(options: AppConfig.webFirebaseOptions);
+    } else {
+      await Firebase.initializeApp();
+    }
+  } catch (error) {
+    startupError = error.toString();
+  }
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -22,11 +32,17 @@ Future<void> main() async {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  runApp(const ProviderScope(child: VelocityTransitApp()));
+  runApp(
+    ProviderScope(
+      child: VelocityTransitApp(startupError: startupError),
+    ),
+  );
 }
 
 class VelocityTransitApp extends ConsumerStatefulWidget {
-  const VelocityTransitApp({super.key});
+  const VelocityTransitApp({super.key, this.startupError});
+
+  final String? startupError;
 
   @override
   ConsumerState<VelocityTransitApp> createState() => _VelocityTransitAppState();
@@ -62,6 +78,41 @@ class _VelocityTransitAppState extends ConsumerState<VelocityTransitApp> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.startupError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: AppColors.backgroundLight,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 40),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'App startup failed',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    widget.startupError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp(
       navigatorKey: appNavigatorKey,
       title: 'Velocity Transit',

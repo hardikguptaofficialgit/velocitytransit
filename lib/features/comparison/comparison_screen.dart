@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/data/models.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/doodle_icons.dart';
 import '../../core/providers/transit_provider.dart';
@@ -223,9 +224,16 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
       ...selectedBuses.asMap().entries.map((entry) {
         final idx = entry.key;
         final bus = entry.value;
-        final route = state.routes.firstWhere((r) => r.id == bus.routeId);
+        final route = state.routes.cast<TransitRoute?>().firstWhere(
+              (r) => r?.id == bus.routeId,
+              orElse: () => null,
+            );
         final eta = 3 + Random(bus.id.hashCode).nextInt(20);
         final isFastest = idx == 0;
+
+        if (route == null) {
+          return const SizedBox.shrink();
+        }
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -299,7 +307,15 @@ class _ComparisonScreenState extends ConsumerState<ComparisonScreen> {
       const SizedBox(height: 4),
       ...selectedBuses.asMap().entries.map((entry) {
         final bus = entry.value;
-        final route = state.routes.firstWhere((r) => r.id == bus.routeId);
+        final route = state.routes.cast<TransitRoute?>().firstWhere(
+              (r) => r?.id == bus.routeId,
+              orElse: () => null,
+            );
+
+        if (route == null) {
+          return const SizedBox.shrink();
+        }
+
         final color = AppColors.busLineColors[
             route.colorIndex % AppColors.busLineColors.length];
         final eta = 3 + Random(bus.id.hashCode).nextInt(20);

@@ -232,14 +232,18 @@ class TransitNotifier extends Notifier<TransitState> {
 
   List<Bus> _buildDemoBuses(List<TransitRoute> routes) {
     final demos = SimulationData.initialBusesForRoutes(routes);
+    final routesById = {for (final route in routes) route.id: route};
     return demos
         .map(
-          (bus) => bus.copyWith(
-            isDemo: true,
-            routeName: routes.firstWhere((route) => route.id == bus.routeId).name,
-            routeShortName: routes.firstWhere((route) => route.id == bus.routeId).shortName,
-            suggestedAction: bus.suggestedAction ?? 'Demo bus shown until a live trip starts.',
-          ),
+          (bus) {
+            final route = routesById[bus.routeId];
+            return bus.copyWith(
+              isDemo: true,
+              routeName: route?.name ?? bus.routeName,
+              routeShortName: route?.shortName ?? bus.routeShortName,
+              suggestedAction: bus.suggestedAction ?? 'Demo bus shown until a live trip starts.',
+            );
+          },
         )
         .toList();
   }

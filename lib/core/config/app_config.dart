@@ -29,7 +29,7 @@ class AppConfig {
     defaultValue: 'velocity-transit-7f723.firebasestorage.app',
   );
 
-  static FirebaseOptions get firebaseOptions => const FirebaseOptions(
+  static FirebaseOptions get webFirebaseOptions => const FirebaseOptions(
     apiKey: firebaseApiKey,
     appId: firebaseAppId,
     messagingSenderId: firebaseMessagingSenderId,

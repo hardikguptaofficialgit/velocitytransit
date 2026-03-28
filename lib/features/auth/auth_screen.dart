@@ -286,8 +286,8 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
             icon: Image.asset(
               'assets/google_g_logo.png',
-              height: 24,
               width: 24,
+              height: 24,
             ),
             label: Text(
               'Continue with Google',

@@ -77,7 +77,28 @@ class _TripPlaybackScreenState extends ConsumerState<TripPlaybackScreen>
       );
     }
 
-    final route = state.routes.firstWhere((r) => r.id == bus.routeId);
+    final route = state.routes.cast<TransitRoute?>().firstWhere(
+          (r) => r?.id == bus.routeId,
+          orElse: () => null,
+        );
+
+    if (route == null || route.stops.length < 2 || route.pathPoints.length < 2) {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundLight,
+        appBar: AppBar(title: const Text('Playback')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Playback is unavailable for this bus right now.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+        ),
+      );
+    }
+
     final color = AppColors.busLineColors[
         route.colorIndex % AppColors.busLineColors.length];
 
@@ -460,6 +481,4 @@ class _SpeedButton extends StatelessWidget {
     );
   }
 }
-
-
 

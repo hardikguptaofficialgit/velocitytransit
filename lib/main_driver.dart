@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'core/config/app_config.dart';
 import 'core/data/models.dart';
 import 'core/providers/auth_provider.dart';
@@ -12,16 +13,27 @@ import 'features/driver/driver_home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: AppConfig.firebaseOptions);
+  String? startupError;
+  try {
+    if (kIsWeb) {
+      await Firebase.initializeApp(options: AppConfig.webFirebaseOptions);
+    } else {
+      await Firebase.initializeApp();
+    }
+  } catch (error) {
+    startupError = error.toString();
+  }
   runApp(
-    const ProviderScope(
-      child: VelocityDriverApp(),
+    ProviderScope(
+      child: VelocityDriverApp(startupError: startupError),
     ),
   );
 }
 
 class VelocityDriverApp extends ConsumerStatefulWidget {
-  const VelocityDriverApp({super.key});
+  const VelocityDriverApp({super.key, this.startupError});
+
+  final String? startupError;
 
   @override
   ConsumerState<VelocityDriverApp> createState() => _VelocityDriverAppState();
@@ -45,6 +57,23 @@ class _VelocityDriverAppState extends ConsumerState<VelocityDriverApp> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.startupError != null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                widget.startupError!,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return MaterialApp(
       navigatorKey: appNavigatorKey,
       title: 'Velocity Driver',
