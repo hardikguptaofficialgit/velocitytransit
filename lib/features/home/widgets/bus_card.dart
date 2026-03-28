@@ -20,12 +20,12 @@ class NearbyBusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var etaMinutes = 2 + Random(bus.id.hashCode).nextInt(15);
-    // Add real-time AI delay
-    etaMinutes += bus.estimatedDelay;
+    final etaMinutes = bus.estimatedDelay > 0
+        ? bus.estimatedDelay + 2
+        : 2 + Random(bus.id.hashCode).nextInt(8);
 
-    final nextStop = route.stops[
-        (bus.currentStopIndex + 1).clamp(0, route.stops.length - 1)];
+    final nextStop = route
+        .stops[(bus.currentStopIndex + 1).clamp(0, route.stops.length - 1)];
 
     return VtCard(
       onTap: onTap,
@@ -69,10 +69,27 @@ class NearbyBusCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  'Bus ${bus.number}${bus.driverName?.isNotEmpty == true ? ' • Driver: ${bus.driverName}' : ''}',
+                  style: const TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Flexible(child: Wrap(children: [OccupancyBadge(level: bus.occupancy, compact: false)])),
+                    Flexible(
+                      child: Wrap(
+                        children: [
+                          OccupancyBadge(level: bus.occupancy, compact: false),
+                        ],
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Flexible(child: SpeedIndicator(speed: bus.speed)),
                   ],
@@ -80,22 +97,31 @@ class NearbyBusCard extends StatelessWidget {
                 if (bus.suggestedAction != null) ...[
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      color: AppColors.primarySurface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primaryMuted),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.auto_awesome, size: 12, color: AppColors.primary),
+                        const Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 12,
+                          color: AppColors.primary,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             bus.suggestedAction!,
                             style: const TextStyle(
                               color: AppColors.primary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),

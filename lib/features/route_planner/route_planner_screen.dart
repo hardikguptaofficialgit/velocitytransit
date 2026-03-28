@@ -8,7 +8,10 @@ import '../../core/router/app_router.dart';
 import '../../core/widgets/shared_widgets.dart';
 
 class RoutePlannerScreen extends ConsumerStatefulWidget {
-  const RoutePlannerScreen({super.key});
+  final String? initialFrom;
+  final String? initialTo;
+
+  const RoutePlannerScreen({super.key, this.initialFrom, this.initialTo});
 
   @override
   ConsumerState<RoutePlannerScreen> createState() => _RoutePlannerScreenState();
@@ -16,8 +19,8 @@ class RoutePlannerScreen extends ConsumerStatefulWidget {
 
 class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
     with SingleTickerProviderStateMixin {
-  final _fromController = TextEditingController(text: 'Marine Drive');
-  final _toController = TextEditingController(text: 'Tech Park East');
+  late final TextEditingController _fromController;
+  late final TextEditingController _toController;
   List<RouteSuggestion> _suggestions = [];
   bool _hasSearched = false;
   late AnimationController _animController;
@@ -25,6 +28,16 @@ class _RoutePlannerScreenState extends ConsumerState<RoutePlannerScreen>
   @override
   void initState() {
     super.initState();
+    _fromController = TextEditingController(
+      text: widget.initialFrom?.trim().isNotEmpty == true
+          ? widget.initialFrom
+          : 'Marine Drive',
+    );
+    _toController = TextEditingController(
+      text: widget.initialTo?.trim().isNotEmpty == true
+          ? widget.initialTo
+          : 'Tech Park East',
+    );
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),

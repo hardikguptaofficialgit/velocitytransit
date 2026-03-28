@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
+const { roleCheck } = require('../middleware/roleCheck');
 
 
 /**
@@ -20,7 +21,7 @@ router.get('/', verifyToken, async (req, res) => {
 /**
  * POST /api/buses — Create a bus (Admin only)
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const { busNumber, routeId, capacity } = req.body;
 
@@ -46,7 +47,7 @@ router.post('/', verifyToken, async (req, res) => {
 /**
  * PATCH /api/buses/:id — Update a bus (Admin only)
  */
-router.patch('/:id', verifyToken, async (req, res) => {
+router.patch('/:id', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const { id } = req.params;
     const updates = {};
@@ -67,7 +68,7 @@ router.patch('/:id', verifyToken, async (req, res) => {
 /**
  * DELETE /api/buses/:id — Deactivate a bus (Admin only)
  */
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     await db.collection('buses').doc(req.params.id).update({ 
       status: 'inactive',

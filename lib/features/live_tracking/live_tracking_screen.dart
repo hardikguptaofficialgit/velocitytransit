@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/doodle_icons.dart';
 import '../../core/data/models.dart';
+import '../../core/providers/passenger_location_provider.dart';
+import '../../core/providers/tracking_provider.dart';
 import '../../core/providers/transit_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/widgets/shared_widgets.dart';
@@ -21,6 +23,11 @@ class LiveTrackingScreen extends ConsumerStatefulWidget {
 class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  AnimationController? _busMotionController;
+  final MapController _mapController = MapController();
+  LatLng? _lastFocusedPosition;
+  LatLng? _busAnimationStart;
+  LatLng? _busAnimationTarget;
 
   @override
   void initState() {
@@ -29,21 +36,64 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
+    _ensureBusMotionController();
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _busMotionController?.dispose();
+    _mapController.dispose();
     super.dispose();
+  }
+
+  AnimationController get _resolvedBusMotionController {
+    _ensureBusMotionController();
+    return _busMotionController!;
+  }
+
+  void _ensureBusMotionController() {
+    _busMotionController ??=
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 700),
+        )..value = 1;
+  }
+
+  void _syncAnimatedBusPosition(LatLng nextTarget) {
+    final currentDisplayed = _currentAnimatedBusPosition();
+    if (_busAnimationTarget == null) {
+      _busAnimationStart = nextTarget;
+      _busAnimationTarget = nextTarget;
+      _resolvedBusMotionController.value = 1;
+      return;
+    }
+
+    if (_busAnimationTarget!.distanceTo(nextTarget) < 0.5) return;
+
+    _busAnimationStart = currentDisplayed;
+    _busAnimationTarget = nextTarget;
+    _resolvedBusMotionController.forward(from: 0);
+  }
+
+  LatLng _currentAnimatedBusPosition() {
+    final start = _busAnimationStart;
+    final target = _busAnimationTarget;
+    if (start == null || target == null) return const LatLng(0, 0);
+    final t = Curves.easeInOutCubic.transform(_resolvedBusMotionController.value);
+    return start.interpolate(target, t);
   }
 
   @override
   Widget build(BuildContext context) {
+    _ensureBusMotionController();
     final state = ref.watch(transitProvider);
+    final trackingState = ref.watch(trackingProvider);
+    final passengerLocation = ref.watch(passengerLocationProvider);
     final bus = state.buses.cast<Bus?>().firstWhere(
-          (b) => b?.id == widget.busId,
-          orElse: () => null,
-        );
+      (b) => b?.id == widget.busId,
+      orElse: () => null,
+    );
 
     if (bus == null) {
       return Scaffold(
@@ -58,11 +108,64 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
       );
     }
 
-    final route = state.routes.firstWhere((r) => r.id == bus.routeId);
-    final nextStopIdx =
-        (bus.currentStopIndex + 1).clamp(0, route.stops.length - 1);
+    final livePosition = trackingState.livePositions
+        .cast<LiveBusPosition?>()
+        .firstWhere(
+          (position) => position?.busId == widget.busId,
+          orElse: () => null,
+        );
+    final resolvedBusPosition = livePosition == null
+        ? bus.position
+        : LatLng(livePosition.lat, livePosition.lng);
+
+    final route = state.routes.cast<TransitRoute?>().firstWhere(
+      (r) => r?.id == bus.routeId,
+      orElse: () => null,
+    );
+    if (route == null) {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundLight,
+        appBar: AppBar(title: const Text('Route Unavailable')),
+        body: const Center(
+          child: Text(
+            'Live route data is still syncing for this bus.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+    final nextStopIdx = (bus.currentStopIndex + 1).clamp(
+      0,
+      route.stops.length - 1,
+    );
     final nextStop = route.stops[nextStopIdx];
-    final etaMinutes = 1 + Random(bus.id.hashCode + DateTime.now().second).nextInt(8);
+    final etaMinutes =
+        1 + Random(bus.id.hashCode + DateTime.now().second).nextInt(8);
+    final passengerPosition = passengerLocation.position;
+    final focusPosition = passengerPosition ?? resolvedBusPosition;
+    _syncAnimatedBusPosition(resolvedBusPosition);
+    final animatedBusPosition = _currentAnimatedBusPosition();
+
+    final shouldMoveCamera = passengerPosition != null
+        ? _lastFocusedPosition == null ||
+            _lastFocusedPosition!.distanceTo(focusPosition) > 35
+        : _mapController.camera.center.distanceTo(animatedBusPosition) > 180;
+
+    if (shouldMoveCamera) {
+      _lastFocusedPosition = focusPosition;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (passengerPosition != null) {
+          ref
+              .read(transitProvider.notifier)
+              .ensureNetworkForPassenger(passengerPosition);
+        }
+        _mapController.move(
+          passengerPosition ?? animatedBusPosition,
+          _mapController.camera.zoom,
+        );
+      });
+    }
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -71,14 +174,16 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
           // Simulated tracking map
           Positioned.fill(
             child: FlutterMap(
+              mapController: _mapController,
               options: MapOptions(
-                initialCenter: bus.position,
+                initialCenter: focusPosition,
                 initialZoom: 14.5,
                 maxZoom: 18.0,
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+                  urlTemplate:
+                      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
                   subdomains: const ['a', 'b', 'c', 'd'],
                   userAgentPackageName: 'com.velocitytransit.app',
                 ),
@@ -86,55 +191,95 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                   polylines: [
                     Polyline(
                       points: route.pathPoints,
-                      color: AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length].withValues(alpha: 0.6),
+                      color: AppColors
+                          .busLineColors[route.colorIndex %
+                              AppColors.busLineColors.length]
+                          .withValues(alpha: 0.6),
                       strokeWidth: 4.0,
                     ),
                   ],
                 ),
-                MarkerLayer(
-                  markers: [
-                    ...route.stops.map(
-                      (stop) {
-                        final isPast = route.stops.indexOf(stop) < bus.currentStopIndex;
-                        return Marker(
-                          point: stop.position,
-                          width: isPast ? 10 : 14,
-                          height: isPast ? 10 : 14,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.backgroundCard,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length].withValues(alpha: isPast ? 0.4 : 1.0),
-                                width: isPast ? 2 : 3,
+                AnimatedBuilder(
+                  animation: Listenable.merge([
+                    _pulseController,
+                    _resolvedBusMotionController,
+                  ]),
+                  builder: (context, _) {
+                    return MarkerLayer(
+                      markers: [
+                        ...route.stops.map((stop) {
+                          final isPast = route.stops.indexOf(stop) < bus.currentStopIndex;
+                          return Marker(
+                            point: stop.position,
+                            width: isPast ? 10 : 14,
+                            height: isPast ? 10 : 14,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.backgroundCard,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AppColors
+                                      .busLineColors[route.colorIndex % AppColors.busLineColors.length]
+                                      .withValues(alpha: isPast ? 0.4 : 1.0),
+                                  width: isPast ? 2 : 3,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                        Marker(
+                          point: _currentAnimatedBusPosition(),
+                          width: 44,
+                          height: 44,
+                          child: Transform.rotate(
+                            angle: bus.heading * pi / 180,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.busLineColors[
+                                    route.colorIndex % AppColors.busLineColors.length],
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.busLineColors[
+                                            route.colorIndex % AppColors.busLineColors.length]
+                                        .withValues(alpha: 0.4),
+                                    blurRadius: 10 + (_pulseController.value * 12),
+                                    spreadRadius: _pulseController.value * 4,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: DoodleIcons.bus(
+                                  size: 20,
+                                  color: AppColors.backgroundCard,
+                                ),
                               ),
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    Marker(
-                      point: bus.position,
-                      width: 44,
-                      height: 44,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length],
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length].withValues(alpha: 0.4),
-                              blurRadius: 10 + (_pulseController.value * 12),
-                              spreadRadius: _pulseController.value * 4,
+                        ),
+                        if (passengerPosition != null)
+                          Marker(
+                            point: passengerPosition,
+                            width: 32,
+                            height: 32,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: AppColors.backgroundCard, width: 4),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withValues(alpha: 0.3),
+                                    blurRadius: 14,
+                                    spreadRadius: 4,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
-                        child: Center(
-                          child: DoodleIcons.bus(size: 20, color: AppColors.backgroundCard),
-                        ),
-                      ),
-                    ),
-                  ],
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -166,8 +311,11 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Center(
-                        child: Icon(Icons.arrow_back_ios_new,
-                            size: 16, color: AppColors.textPrimary),
+                        child: Icon(
+                          Icons.arrow_back_ios_new,
+                          size: 16,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                   ),
@@ -189,6 +337,18 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        if (bus.driverName?.isNotEmpty == true)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Driver: ${bus.driverName}',
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
                         Row(
                           children: [
                             PulsingDot(color: AppColors.primary, size: 5),
@@ -202,6 +362,23 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                                 letterSpacing: 1,
                               ),
                             ),
+                            if (passengerPosition != null) ...[
+                              const SizedBox(width: 10),
+                              const Icon(
+                                Icons.my_location_rounded,
+                                size: 12,
+                                color: AppColors.textTertiary,
+                              ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'GPS',
+                                style: TextStyle(
+                                  color: AppColors.textTertiary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ],
@@ -344,8 +521,9 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                 final isPast = index < bus.currentStopIndex;
                 final isCurrent = index == bus.currentStopIndex;
                 final isNext = index == bus.currentStopIndex + 1;
-                final color = AppColors.busLineColors[
-                    route.colorIndex % AppColors.busLineColors.length];
+                final color =
+                    AppColors.busLineColors[route.colorIndex %
+                        AppColors.busLineColors.length];
 
                 return Row(
                   children: [
@@ -373,16 +551,16 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                               border: isPast || isCurrent
                                   ? null
                                   : Border.all(
-                                      color: AppColors.borderLight, width: 2),
+                                      color: AppColors.borderLight,
+                                      width: 2,
+                                    ),
                             ),
                           ),
                           if (index < route.stops.length - 1)
                             Container(
                               width: 2,
                               height: 12,
-                              color: isPast
-                                  ? color
-                                  : AppColors.borderLight,
+                              color: isPast ? color : AppColors.borderLight,
                             ),
                         ],
                       ),
@@ -401,8 +579,8 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
                                 color: isCurrent || isNext
                                     ? AppColors.textPrimary
                                     : isPast
-                                        ? AppColors.textTertiary
-                                        : AppColors.textSecondary,
+                                    ? AppColors.textTertiary
+                                    : AppColors.textSecondary,
                                 fontSize: isCurrent ? 14 : 13,
                                 fontWeight: isCurrent
                                     ? FontWeight.w700
@@ -446,4 +624,3 @@ class _LiveTrackingScreenState extends ConsumerState<LiveTrackingScreen>
     );
   }
 }
-

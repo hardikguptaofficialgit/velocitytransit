@@ -1,8 +1,8 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../data/models.dart';
+import '../data/simulation_data.dart';
 
 class SearchResult {
   final String title;
@@ -17,54 +17,48 @@ class SearchResult {
 }
 
 class SearchNotifier extends Notifier<AsyncValue<List<SearchResult>>> {
-  Timer? _debounceTimer;
-  int _requestId = 0; // guards against stale responses
-
   @override
   AsyncValue<List<SearchResult>> build() {
-    ref.onDispose(() {
-      _debounceTimer?.cancel();
-    });
     return const AsyncValue.data([]);
   }
 
-  /// Debounced search — waits 300ms after last keystroke before firing
-  void search(String query) {
-    _debounceTimer?.cancel();
+  Future<void> search(String query) async {
+    final trimmedQuery = query.trim();
+    final localResults = _localResults(trimmedQuery);
 
-    if (query.isEmpty || query.length < 3) {
+    if (trimmedQuery.isEmpty) {
       state = const AsyncValue.data([]);
       return;
     }
 
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      _executeSearch(query);
-    });
-  }
+    if (trimmedQuery.length < 3) {
+      state = AsyncValue.data(localResults);
+      return;
+    }
 
-  Future<void> _executeSearch(String query) async {
-    final currentRequestId = ++_requestId;
     state = const AsyncValue.loading();
-
+    
     try {
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&addressdetails=1&limit=5&viewbox=85.7,20.2,85.9,20.4&bounded=1'
+        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(trimmedQuery)}&format=json&addressdetails=1&limit=5&viewbox=85.7,20.2,85.9,20.4&bounded=1'
       );
 
       final response = await http.get(url, headers: {
         'User-Agent': 'VelocityTransitApp/1.0',
-      });
-
-      // Discard if a newer request has been fired
-      if (currentRequestId != _requestId) return;
+      }).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
-        final results = data.map((item) {
-          final address = item['address'];
-          final road = (address['road'] ?? address['suburb'] ?? address['city_district'] ?? address['neighbourhood'] ?? '') as String;
+        final remoteResults = data.map<SearchResult>((item) {
+          final address = item['address'] as Map<String, dynamic>? ?? const {};
+          final road = (address['road'] ??
+                  address['suburb'] ??
+                  address['city_district'] ??
+                  address['neighbourhood'] ??
+                  address['city'] ??
+                  '') as String;
           final name = (item['display_name'] as String).split(',')[0];
-
+          
           return SearchResult(
             title: name,
             subtitle: road,
@@ -74,14 +68,68 @@ class SearchNotifier extends Notifier<AsyncValue<List<SearchResult>>> {
             ),
           );
         }).toList();
-        state = AsyncValue.data(results);
+        state = AsyncValue.data(_mergeResults(localResults, remoteResults));
       } else {
-        state = AsyncValue.error('Search failed', StackTrace.current);
+        state = localResults.isNotEmpty
+            ? AsyncValue.data(localResults)
+            : AsyncValue.error('Search failed', StackTrace.current);
       }
     } catch (e, st) {
-      if (currentRequestId != _requestId) return;
-      state = AsyncValue.error(e, st);
+      state = localResults.isNotEmpty
+          ? AsyncValue.data(localResults)
+          : AsyncValue.error(e, st);
     }
+  }
+
+  List<SearchResult> _localResults(String query) {
+    final normalized = query.toLowerCase();
+    final stopMatches = <SearchResult>[];
+
+    for (final route in SimulationData.routes) {
+      if (route.name.toLowerCase().contains(normalized) ||
+          route.shortName.toLowerCase().contains(normalized)) {
+        stopMatches.add(
+          SearchResult(
+            title: route.name,
+            subtitle: 'Route ${route.shortName} · ${route.stops.length} stops',
+            position: route.stops.first.position,
+          ),
+        );
+      }
+
+      for (final stop in route.stops) {
+        if (stop.name.toLowerCase().contains(normalized)) {
+          stopMatches.add(
+            SearchResult(
+              title: stop.name,
+              subtitle: route.name,
+              position: stop.position,
+            ),
+          );
+        }
+      }
+    }
+
+    return _dedupe(stopMatches).take(6).toList();
+  }
+
+  List<SearchResult> _mergeResults(
+    List<SearchResult> localResults,
+    List<SearchResult> remoteResults,
+  ) {
+    return _dedupe([...localResults, ...remoteResults]).take(6).toList();
+  }
+
+  List<SearchResult> _dedupe(List<SearchResult> results) {
+    final seen = <String>{};
+    final filtered = <SearchResult>[];
+    for (final result in results) {
+      final key = '${result.title}|${result.subtitle}'.toLowerCase();
+      if (seen.add(key)) {
+        filtered.add(result);
+      }
+    }
+    return filtered;
   }
 }
 

@@ -2,13 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
+const { roleCheck } = require('../middleware/roleCheck');
+const { sendTransitNotification } = require('../services/notifications');
 
 
 /**
  * GET /api/assignments — List all assignments (Admin only)
  * Query: ?active=true for only active ones
  */
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     let query = db.collection('assignments');
     if (req.query.active === 'true') {
@@ -40,7 +42,7 @@ router.get('/active', verifyToken, async (req, res) => {
 /**
  * GET /api/assignments/my — Get current driver's active assignment
  */
-router.get('/my', verifyToken, async (req, res) => {
+router.get('/my', verifyToken, roleCheck('driver', 'admin'), async (req, res) => {
   try {
     const snapshot = await db.collection('assignments')
       .where('driverId', '==', req.user.uid)
@@ -64,7 +66,7 @@ router.get('/my', verifyToken, async (req, res) => {
  * This STARTS location tracking for that bus.
  * Body: { busId, driverId, busNumber, driverName, routeId }
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const { busId, driverId, busNumber, driverName, routeId } = req.body;
 
@@ -120,6 +122,16 @@ router.post('/', verifyToken, async (req, res) => {
       lastUpdated: new Date().toISOString(),
     });
 
+    await sendTransitNotification({
+      type: 'trip_started',
+      title: 'Trip Started',
+      body: `${busNumber || busId} is now live${routeId ? ` on route ${routeId}` : ''}.`,
+      routeId: routeId || null,
+      busId,
+      audience: 'passenger',
+      dedupeKey: `assignment:start:${busId}:${driverId}`,
+    });
+
     res.status(201).json({ id: docRef.id, ...assignmentData });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -130,7 +142,7 @@ router.post('/', verifyToken, async (req, res) => {
  * PATCH /api/assignments/:id/deactivate — Remove assignment (Admin only)
  * This STOPS location tracking for that bus.
  */
-router.patch('/:id/deactivate', verifyToken, async (req, res) => {
+router.patch('/:id/deactivate', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const assignmentDoc = await db.collection('assignments').doc(req.params.id).get();
     
@@ -154,6 +166,16 @@ router.patch('/:id/deactivate', verifyToken, async (req, res) => {
     if (io) {
       io.emit('bus:offline', { busId: assignment.busId });
     }
+
+    await sendTransitNotification({
+      type: 'trip_completed',
+      title: 'Trip Completed',
+      body: `${assignment.busNumber || assignment.busId} has completed the current trip.`,
+      routeId: assignment.routeId || null,
+      busId: assignment.busId,
+      audience: 'passenger',
+      dedupeKey: `assignment:stop:${assignment.busId}:${req.params.id}`,
+    });
 
     res.json({ message: 'Assignment deactivated, tracking stopped' });
   } catch (err) {

@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Velocity Transit uses your location to show nearby routes and buses around you.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Velocity Transit uses your location to keep nearby transit visible while you explore the map.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Velocity Transit uses notifications and location to keep your live trip updates timely and accurate.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

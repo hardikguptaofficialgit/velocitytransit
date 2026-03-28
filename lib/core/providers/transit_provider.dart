@@ -1,109 +1,17 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:flutter/widgets.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../data/models.dart';
 import '../data/simulation_data.dart';
+import '../services/backend_api_service.dart';
+import '../services/road_routing_service.dart';
+import 'auth_provider.dart';
+import 'tracking_provider.dart';
 
-/// Simulation engine that continuously moves buses along routes
-class SimulationEngine {
-  final Random _rng = Random();
-  Timer? _timer;
-  List<Bus> _buses = [];
-  final List<TransitRoute> _routes = SimulationData.routes;
-
-  List<Bus> get buses => List.unmodifiable(_buses);
-  List<TransitRoute> get routes => _routes;
-
-  void start(void Function(List<Bus>) onUpdate) {
-    _buses = SimulationData.initialBuses();
-    onUpdate(_buses);
-
-    _timer = Timer.periodic(const Duration(milliseconds: 800), (_) {
-      _tick();
-      onUpdate(_buses);
-    });
-  }
-
-  void stop() {
-    _timer?.cancel();
-  }
-
-  void _tick() {
-    _buses = _buses.map((bus) {
-      final route = _routes.firstWhere((r) => r.id == bus.routeId);
-      if (route.pathPoints.isEmpty) return bus;
-
-      // Advance progress
-      final speedFactor = 0.002 + _rng.nextDouble() * 0.003;
-      var newProgress = bus.progress + speedFactor;
-      if (newProgress >= 1.0) newProgress = 0.0;
-
-      // Calculate position
-      final pathLen = route.pathPoints.length - 1;
-      final idx = (newProgress * pathLen).floor().clamp(0, pathLen - 1);
-      final t = (newProgress * pathLen) - idx;
-      final newPos = route.pathPoints[idx].interpolate(
-        route.pathPoints[(idx + 1).clamp(0, pathLen)],
-        t.clamp(0.0, 1.0),
-      );
-
-      // Calculate heading
-      final nextIdx = (idx + 1).clamp(0, pathLen);
-      final dx = route.pathPoints[nextIdx].longitude - route.pathPoints[idx].longitude;
-      final dy = route.pathPoints[nextIdx].latitude - route.pathPoints[idx].latitude;
-      final heading = atan2(dx, dy) * 180 / pi;
-
-      // Update current stop index
-      final stopProgress = newProgress * (route.stops.length - 1);
-      final currentStopIdx = stopProgress.floor().clamp(0, route.stops.length - 1);
-
-      // Randomly fluctuate occupancy
-      var occupancy = bus.occupancy;
-      if (_rng.nextDouble() < 0.05) {
-        occupancy = OccupancyLevel.values[_rng.nextInt(3)];
-      }
-
-      final speed = 15 + _rng.nextDouble() * 35;
-
-      // AI Layer: Simulated Delay & Suggestion Logic
-      var delay = bus.estimatedDelay;
-      String? suggestion;
-      
-      // If occupancy is high, suggest increasing frequency or speeding up
-      if (occupancy == OccupancyLevel.high) {
-        suggestion = "High demand: Suggested increase in fleet speed";
-        delay += _rng.nextInt(2);
-      } else if (speed < 20) {
-        // Low speed indicates traffic
-        suggestion = "Traffic detected: Rerouting Bus 402 if possible";
-        delay += 1 + _rng.nextInt(3);
-      } else {
-        delay = (delay - 1).clamp(0, 15);
-      }
-
-      return bus.copyWith(
-        position: newPos,
-        heading: heading,
-        progress: newProgress,
-        currentStopIndex: currentStopIdx,
-        speed: speed,
-        occupancy: occupancy,
-        estimatedDelay: delay,
-        suggestedAction: suggestion,
-      );
-    }).toList();
-  }
-}
-
-/// State class for the transit system
 class TransitState {
-  final List<Bus> buses;
-  final List<TransitRoute> routes;
-  final List<TransitAlert> alerts;
-  final List<FavoriteRoute> favorites;
-  final bool isSimulationRunning;
-  final bool showHeatmap;
+  static const Object _unset = Object();
 
   const TransitState({
     this.buses = const [],
@@ -112,7 +20,26 @@ class TransitState {
     this.favorites = const [],
     this.isSimulationRunning = false,
     this.showHeatmap = false,
+    this.isLoadingNetwork = false,
+    this.isRefreshingRemote = false,
+    this.passengerAnchor = SimulationData.defaultAnchor,
+    this.demandZones = const [],
+    this.activeAssignment,
+    this.lastError,
   });
+
+  final List<Bus> buses;
+  final List<TransitRoute> routes;
+  final List<TransitAlert> alerts;
+  final List<FavoriteRoute> favorites;
+  final bool isSimulationRunning;
+  final bool showHeatmap;
+  final bool isLoadingNetwork;
+  final bool isRefreshingRemote;
+  final LatLng passengerAnchor;
+  final List<DemandZone> demandZones;
+  final BusAssignment? activeAssignment;
+  final String? lastError;
 
   TransitState copyWith({
     List<Bus>? buses,
@@ -121,6 +48,12 @@ class TransitState {
     List<FavoriteRoute>? favorites,
     bool? isSimulationRunning,
     bool? showHeatmap,
+    bool? isLoadingNetwork,
+    bool? isRefreshingRemote,
+    LatLng? passengerAnchor,
+    List<DemandZone>? demandZones,
+    Object? activeAssignment = _unset,
+    Object? lastError = _unset,
   }) {
     return TransitState(
       buses: buses ?? this.buses,
@@ -129,89 +62,291 @@ class TransitState {
       favorites: favorites ?? this.favorites,
       isSimulationRunning: isSimulationRunning ?? this.isSimulationRunning,
       showHeatmap: showHeatmap ?? this.showHeatmap,
+      isLoadingNetwork: isLoadingNetwork ?? this.isLoadingNetwork,
+      isRefreshingRemote: isRefreshingRemote ?? this.isRefreshingRemote,
+      passengerAnchor: passengerAnchor ?? this.passengerAnchor,
+      demandZones: demandZones ?? this.demandZones,
+      activeAssignment: identical(activeAssignment, _unset)
+          ? this.activeAssignment
+          : activeAssignment as BusAssignment?,
+      lastError: identical(lastError, _unset)
+          ? this.lastError
+          : lastError as String?,
     );
   }
 }
 
-/// Riverpod Notifier for all transit data (Riverpod v3 API)
-/// Observes app lifecycle to pause simulation when backgrounded.
-class TransitNotifier extends Notifier<TransitState>
-    with WidgetsBindingObserver {
-  final SimulationEngine _engine = SimulationEngine();
+class TransitNotifier extends Notifier<TransitState> {
+  final RoadRoutingService _routingService = const RoadRoutingService();
+  final Random _random = Random();
+  Timer? _refreshTimer;
+  LatLng? _lastNetworkAnchor;
+  bool _isRefreshingNetwork = false;
+
+  BackendApiService get _api => BackendApiService(
+        authService: ref.read(authServiceProvider),
+      );
 
   @override
   TransitState build() {
-    WidgetsBinding.instance.addObserver(this);
     ref.onDispose(() {
-      _engine.stop();
-      WidgetsBinding.instance.removeObserver(this);
+      _refreshTimer?.cancel();
     });
 
-    // Initialize with simulation data
-    final initialState = TransitState(
-      routes: SimulationData.routes,
-      alerts: SimulationData.sampleAlerts,
-      favorites: SimulationData.sampleFavorites,
+    ref.listen<AsyncValue<Object?>>(authStateProvider, (_, next) {
+      next.whenData((user) {
+        if (user == null) {
+          _refreshTimer?.cancel();
+          state = const TransitState(
+            passengerAnchor: SimulationData.defaultAnchor,
+            demandZones: [],
+          );
+          return;
+        }
+        unawaited(refreshRemoteData());
+        _startAutoRefresh();
+      });
+    });
+
+    ref.listen<TrackingState>(trackingProvider, (_, next) {
+      _syncLivePositions(next.livePositions);
+    });
+
+    return TransitState(
+      passengerAnchor: SimulationData.defaultAnchor,
+      demandZones: SimulationData.demandZonesForAnchor(SimulationData.defaultAnchor),
     );
-
-    // Start simulation after build
-    Future.microtask(() => startSimulation());
-
-    return initialState;
   }
 
-  /// Pause simulation when app is backgrounded to save battery
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState appState) {
-    if (appState == AppLifecycleState.paused ||
-        appState == AppLifecycleState.inactive) {
-      _engine.stop();
-      state = state.copyWith(isSimulationRunning: false);
-    } else if (appState == AppLifecycleState.resumed) {
-      startSimulation();
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      unawaited(refreshRemoteData(silent: true));
+    });
+  }
+
+  Future<void> refreshRemoteData({bool silent = false}) async {
+    final user = ref.read(authStateProvider).asData?.value;
+    if (user == null) return;
+
+    if (!silent) {
+      state = state.copyWith(isRefreshingRemote: true, lastError: null);
+    }
+
+    try {
+      final results = await Future.wait([
+        _api.fetchRoutes(),
+        _api.fetchBusesRaw(),
+        _api.fetchActiveAssignments(),
+        _api.fetchLivePositions(),
+        _api.fetchAlerts(),
+        _api.fetchMyAssignment().catchError((_) => null),
+      ]);
+
+      final routes = results[0] as List<TransitRoute>;
+      final rawBuses = results[1] as Map<String, Map<String, dynamic>>;
+      final assignments = results[2] as List<BusAssignment>;
+      final livePositions = results[3] as List<LiveBusSnapshot>;
+      final alerts = results[4] as List<TransitAlert>;
+      final myAssignment = results[5] as BusAssignment?;
+
+      final mergedBuses = _mergeTransitData(
+        routes: routes,
+        rawBuses: rawBuses,
+        assignments: assignments,
+        livePositions: livePositions,
+      );
+
+      state = state.copyWith(
+        routes: routes,
+        buses: mergedBuses,
+        alerts: alerts,
+        activeAssignment: myAssignment,
+        isRefreshingRemote: false,
+        isSimulationRunning: mergedBuses.any((bus) => bus.isDemo),
+        lastError: null,
+      );
+    } catch (error) {
+      final fallbackRoutes = state.routes.isNotEmpty ? state.routes : SimulationData.routes;
+      final fallbackBuses = _buildDemoBuses(fallbackRoutes);
+      state = state.copyWith(
+        routes: fallbackRoutes,
+        buses: fallbackBuses,
+        alerts: state.alerts,
+        isRefreshingRemote: false,
+        isSimulationRunning: true,
+        lastError: error.toString(),
+      );
     }
   }
 
-  void startSimulation() {
-    _engine.start((buses) {
-      state = state.copyWith(
-        buses: buses,
-        isSimulationRunning: true,
+  List<Bus> _mergeTransitData({
+    required List<TransitRoute> routes,
+    required Map<String, Map<String, dynamic>> rawBuses,
+    required List<BusAssignment> assignments,
+    required List<LiveBusSnapshot> livePositions,
+  }) {
+    final routeById = {for (final route in routes) route.id: route};
+    final assignmentByBusId = {for (final assignment in assignments) assignment.busId: assignment};
+    final liveByBusId = {for (final snapshot in livePositions) snapshot.busId: snapshot};
+    final allBusIds = <String>{
+      ...rawBuses.keys.where((id) => id.isNotEmpty),
+      ...assignmentByBusId.keys.where((id) => id.isNotEmpty),
+      ...liveByBusId.keys.where((id) => id.isNotEmpty),
+    };
+
+    final buses = <Bus>[];
+    for (final busId in allBusIds) {
+      final busData = rawBuses[busId] ?? const <String, dynamic>{};
+      final assignment = assignmentByBusId[busId];
+      final liveSnapshot = liveByBusId[busId];
+      final routeId =
+          (busData['routeId'] ?? assignment?.routeId ?? liveSnapshot?.routeId)
+              ?.toString() ??
+          '';
+
+      buses.add(
+        Bus.fromBackend(
+          id: busId,
+          busData: busData,
+          route: routeById[routeId],
+          assignment: assignment,
+          liveSnapshot: liveSnapshot,
+        ),
       );
-    });
+    }
+
+    if (buses.isEmpty) {
+      return _buildDemoBuses(routes);
+    }
+
+    final activeRouteIds = buses.map((bus) => bus.routeId).where((id) => id.isNotEmpty).toSet();
+    final missingRoutes = routes.where((route) => !activeRouteIds.contains(route.id)).toList();
+    return [...buses, ..._buildDemoBuses(missingRoutes)];
   }
 
-  void stopSimulation() {
-    _engine.stop();
-    state = state.copyWith(isSimulationRunning: false);
+  List<Bus> _buildDemoBuses(List<TransitRoute> routes) {
+    final demos = SimulationData.initialBusesForRoutes(routes);
+    return demos
+        .map(
+          (bus) => bus.copyWith(
+            isDemo: true,
+            routeName: routes.firstWhere((route) => route.id == bus.routeId).name,
+            routeShortName: routes.firstWhere((route) => route.id == bus.routeId).shortName,
+            suggestedAction: bus.suggestedAction ?? 'Demo bus shown until a live trip starts.',
+          ),
+        )
+        .toList();
+  }
+
+  void _syncLivePositions(List<LiveBusPosition> positions) {
+    if (state.buses.isEmpty || positions.isEmpty) return;
+    final positionByBusId = {for (final position in positions) position.busId: position};
+    state = state.copyWith(
+      buses: state.buses.map((bus) {
+        final live = positionByBusId[bus.id];
+        if (live == null) return bus;
+        final route = getRoute(bus.routeId);
+        final position = LatLng(live.lat, live.lng);
+        return bus.copyWith(
+          position: position,
+          speed: live.speed,
+          heading: live.heading,
+          isOnline: true,
+          currentStopIndex: route == null ? bus.currentStopIndex : _estimateCurrentStopIndex(position, route),
+          progress: route == null ? bus.progress : _estimateProgress(position, route),
+          estimatedDelay: _estimateDelay(live.speed),
+          suggestedAction: live.speed < 10 ? 'Potential delay detected on live service.' : null,
+          lastUpdated: DateTime.tryParse(live.lastUpdated),
+        );
+      }).toList(),
+    );
   }
 
   void toggleHeatmap() {
     state = state.copyWith(showHeatmap: !state.showHeatmap);
   }
 
-  void addFavorite(FavoriteRoute fav) {
-    state = state.copyWith(favorites: [...state.favorites, fav]);
+  Future<void> ensureNetworkForPassenger(LatLng passengerPosition) async {
+    final lastAnchor = _lastNetworkAnchor;
+    if (_isRefreshingNetwork) return;
+    if (lastAnchor != null && lastAnchor.distanceTo(passengerPosition) < 350) {
+      state = state.copyWith(passengerAnchor: passengerPosition);
+      return;
+    }
+
+    _isRefreshingNetwork = true;
+    state = state.copyWith(
+      isLoadingNetwork: true,
+      passengerAnchor: passengerPosition,
+      demandZones: SimulationData.demandZonesForAnchor(passengerPosition),
+    );
+
+    try {
+      final currentRoutes = state.routes.isNotEmpty ? state.routes : SimulationData.routesNearPassenger(passengerPosition);
+      final snappedPaths = <String, List<LatLng>>{};
+
+      for (final route in currentRoutes) {
+        try {
+          final snappedPath = await _routingService.fetchRoutePath(
+            route.stops.map((stop) => stop.position).toList(),
+          );
+          if (snappedPath.length >= 2) {
+            snappedPaths[route.id] = snappedPath;
+          }
+        } catch (_) {}
+      }
+
+      final updatedRoutes = currentRoutes
+          .map(
+            (route) => TransitRoute(
+              id: route.id,
+              name: route.name,
+              shortName: route.shortName,
+              colorIndex: route.colorIndex,
+              stops: route.stops,
+              pathPoints: snappedPaths[route.id] ?? route.pathPoints,
+              isActive: route.isActive,
+            ),
+          )
+          .toList();
+
+      final buses = state.buses.isEmpty ? _buildDemoBuses(updatedRoutes) : state.buses;
+      state = state.copyWith(
+        routes: updatedRoutes,
+        buses: buses,
+        passengerAnchor: passengerPosition,
+        demandZones: SimulationData.demandZonesForAnchor(passengerPosition),
+        isLoadingNetwork: false,
+      );
+      _lastNetworkAnchor = passengerPosition;
+    } finally {
+      _isRefreshingNetwork = false;
+      state = state.copyWith(isLoadingNetwork: false);
+    }
+  }
+
+  void addFavorite(FavoriteRoute favorite) {
+    state = state.copyWith(favorites: [...state.favorites, favorite]);
   }
 
   void removeFavorite(String id) {
     state = state.copyWith(
-      favorites: state.favorites.where((f) => f.id != id).toList(),
+      favorites: state.favorites.where((favorite) => favorite.id != id).toList(),
     );
   }
 
   void markAlertRead(String id) {
     state = state.copyWith(
-      alerts: state.alerts.map((a) {
-        if (a.id == id) return a.copyWith(isRead: true);
-        return a;
-      }).toList(),
+      alerts: state.alerts
+          .map((alert) => alert.id == id ? alert.copyWith(isRead: true) : alert)
+          .toList(),
     );
   }
 
   Bus? getBus(String busId) {
     try {
-      return state.buses.firstWhere((b) => b.id == busId);
+      return state.buses.firstWhere((bus) => bus.id == busId);
     } catch (_) {
       return null;
     }
@@ -219,46 +354,87 @@ class TransitNotifier extends Notifier<TransitState>
 
   TransitRoute? getRoute(String routeId) {
     try {
-      return state.routes.firstWhere((r) => r.id == routeId);
+      return state.routes.firstWhere((route) => route.id == routeId);
     } catch (_) {
       return null;
     }
   }
 
   List<Bus> getBusesOnRoute(String routeId) {
-    return state.buses.where((b) => b.routeId == routeId).toList();
+    return state.buses.where((bus) => bus.routeId == routeId).toList();
   }
 
   List<RouteSuggestion> getSuggestions(String from, String to) {
-    final rng = Random();
-    return state.routes.map((route) {
-      return RouteSuggestion(
-        route: route,
-        etaMinutes: 8 + rng.nextInt(25),
-        stopsCount: route.stops.length,
-        transfers: rng.nextInt(2),
-        walkDistance: '${100 + rng.nextInt(400)}m',
-        isFastest: route.id == 'route_1',
-      );
-    }).toList()
+    return state.routes
+        .map((route) {
+          final eta = 5 + _random.nextInt(20);
+          return RouteSuggestion(
+            route: route,
+            etaMinutes: eta,
+            stopsCount: route.stops.length,
+            transfers: eta > 18 ? 1 : 0,
+            walkDistance: '${120 + _random.nextInt(300)}m',
+            isFastest: state.routes.isNotEmpty && route.id == state.routes.first.id,
+          );
+        })
+        .toList()
       ..sort((a, b) => a.etaMinutes.compareTo(b.etaMinutes));
   }
 }
 
-/// Providers
-final transitProvider =
-    NotifierProvider<TransitNotifier, TransitState>(TransitNotifier.new);
+final transitProvider = NotifierProvider<TransitNotifier, TransitState>(
+  TransitNotifier.new,
+);
 
 final busProvider = Provider.family<Bus?, String>((ref, busId) {
-  return ref.watch(transitProvider).buses.cast<Bus?>().firstWhere(
-        (b) => b?.id == busId,
-        orElse: () => null,
-      );
+  return ref
+      .watch(transitProvider)
+      .buses
+      .cast<Bus?>()
+      .firstWhere((bus) => bus?.id == busId, orElse: () => null);
 });
 
 final routeProvider = Provider.family<TransitRoute?, String>((ref, routeId) {
-  return ref.watch(transitProvider).routes.cast<TransitRoute?>().firstWhere(
-        (r) => r?.id == routeId,
-        orElse: () => null,
-      );
+  return ref
+      .watch(transitProvider)
+      .routes
+      .cast<TransitRoute?>()
+      .firstWhere((route) => route?.id == routeId, orElse: () => null);
 });
+
+int _estimateCurrentStopIndex(LatLng position, TransitRoute route) {
+  if (route.stops.isEmpty) return 0;
+  var bestIndex = 0;
+  var bestDistance = double.infinity;
+  for (var i = 0; i < route.stops.length; i++) {
+    final distance = position.distanceTo(route.stops[i].position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+double _estimateProgress(LatLng position, TransitRoute route) {
+  if (route.pathPoints.isEmpty) return 0;
+  var bestIndex = 0;
+  var bestDistance = double.infinity;
+  for (var i = 0; i < route.pathPoints.length; i++) {
+    final distance = position.distanceTo(route.pathPoints[i]);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  if (route.pathPoints.length == 1) return 0;
+  return bestIndex / (route.pathPoints.length - 1);
+}
+
+int _estimateDelay(double speed) {
+  if (speed <= 0) return 6;
+  if (speed < 12) return 5;
+  if (speed < 20) return 3;
+  if (speed < 28) return 1;
+  return 0;
+}

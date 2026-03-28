@@ -194,6 +194,17 @@ class RouteDetailsScreen extends ConsumerWidget {
                                     ),
                                   ),
                                   const SizedBox(height: 2),
+                                  if (bus.driverName?.isNotEmpty == true)
+                                    Text(
+                                      bus.driverName!,
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  if (bus.driverName?.isNotEmpty == true)
+                                    const SizedBox(height: 2),
                                   Row(
                                     children: [
                                       OccupancyBadge(

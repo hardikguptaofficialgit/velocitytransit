@@ -26,11 +26,8 @@ class VtCard extends StatelessWidget {
         padding: padding ?? const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.backgroundCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: borderColor ?? AppColors.border,
-            width: 1,
-          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor ?? AppColors.border, width: 1),
         ),
         child: child,
       ),
@@ -66,10 +63,7 @@ class OccupancyBadge extends StatelessWidget {
       return Container(
         width: 8,
         height: 8,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-        ),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       );
     }
 
@@ -119,20 +113,22 @@ class RouteBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AppColors.busLineColors[colorIndex % AppColors.busLineColors.length];
+    final color =
+        AppColors.busLineColors[colorIndex % AppColors.busLineColors.length];
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(8),
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: AppColors.textOnPrimary,
+          color: color,
           fontSize: fontSize,
           fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
+          letterSpacing: 0.2,
         ),
       ),
     );
@@ -212,7 +208,9 @@ class _PulsingDotState extends State<PulsingDot>
           width: widget.size + (_controller.value * 4),
           height: widget.size + (_controller.value * 4),
           decoration: BoxDecoration(
-            color: widget.color.withAlpha((153 + _controller.value * 102).round()),
+            color: widget.color.withAlpha(
+              (153 + _controller.value * 102).round(),
+            ),
             shape: BoxShape.circle,
           ),
         );

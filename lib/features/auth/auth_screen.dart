@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../core/theme/app_colors.dart';
+
+import '../../core/data/models.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/router/app_router.dart';
+import '../../core/theme/app_colors.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({
+    super.key,
+    this.role = AppRoleChoice.passenger,
+  });
+
+  final AppRoleChoice role;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -21,6 +28,8 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _loading = false;
   String? _error;
 
+  bool get _isDriverLogin => widget.role == AppRoleChoice.driver;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -30,9 +39,8 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _handleEmailAuth() async {
-    setState(() { _loading = true; _error = null; });
-
     try {
+      _setLoadingState(true);
       if (_isLogin) {
         await _authService.signIn(
           email: _emailController.text.trim(),
@@ -45,238 +53,391 @@ class _AuthScreenState extends State<AuthScreen> {
           name: _nameController.text.trim(),
         );
       }
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, AppRouter.home);
-      }
-    } catch (e) {
-      setState(() {
-        _error = e.toString().contains('invalid-credential')
-            ? 'Invalid email or password'
-            : e.toString().contains('email-already-in-use')
-                ? 'Email already registered'
-                : e.toString().contains('weak-password')
-                    ? 'Password must be at least 6 characters'
-                    : 'Something went wrong. Please try again.';
-      });
-    }
 
-    setState(() { _loading = false; });
+      final profile = await _authService.fetchCurrentProfile();
+      await _completeAuth(profile);
+    } catch (error) {
+      _setError(_readableMessage(error));
+    } finally {
+      _setLoadingState(false);
+    }
   }
 
-  Future<void> _handleGoogleSignIn() async {
-    setState(() { _loading = true; _error = null; });
-
+  Future<void> _handleGoogleAuth() async {
     try {
+      _setLoadingState(true);
       final user = await _authService.signInWithGoogle();
-      if (user != null && mounted) {
-        Navigator.pushReplacementNamed(context, AppRouter.home);
+      if (user == null) {
+        throw Exception('Google sign-in was cancelled.');
       }
-    } catch (e) {
-      setState(() { _error = 'Google Sign-In failed. Please try again.'; });
+      final profile = await _authService.fetchCurrentProfile();
+      await _completeAuth(profile);
+    } catch (error) {
+      _setError(_readableMessage(error));
+    } finally {
+      _setLoadingState(false);
+    }
+  }
+
+  Future<void> _completeAuth(AppUserProfile profile) async {
+    if (_isDriverLogin && !profile.isDriver) {
+      await _authService.signOut();
+      throw Exception('This account is not enabled as a driver yet.');
     }
 
-    setState(() { _loading = false; });
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      _isDriverLogin ? AppRouter.driverHome : AppRouter.home,
+      (route) => false,
+    );
+  }
+
+  void _setLoadingState(bool value) {
+    if (!mounted) return;
+    setState(() {
+      _loading = value;
+      if (value) _error = null;
+    });
+  }
+
+  void _setError(String message) {
+    if (!mounted) return;
+    setState(() => _error = message);
+  }
+
+  String _readableMessage(Object error) {
+    final message = error.toString();
+    return message.contains('invalid-credential')
+        ? 'Invalid email or password.'
+        : message.contains('email-already-in-use')
+            ? 'This email is already registered.'
+            : message.contains('weak-password')
+                ? 'Password must be at least 6 characters.'
+                : message.contains('network-request-failed')
+                    ? 'Network issue detected. Please try again.'
+                    : message.replaceFirst('Exception: ', '');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundDark,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Logo
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF34D399), Color(0xFF06B6D4)],
-                    ),
-                  ),
-                  child: const Icon(Icons.directions_bus_rounded,
-                      color: Colors.white, size: 36),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Velocity Transit',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _isLogin ? 'Welcome back!' : 'Create your account',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 14,
-                    color: Colors.white54,
-                  ),
-                ),
-                const SizedBox(height: 40),
+    final roleLabel = _isDriverLogin ? 'Driver' : 'Passenger';
+    final roleIcon =
+        _isDriverLogin ? Icons.directions_bus_rounded : Icons.person_pin_circle_rounded;
+    final roleAccent = _isDriverLogin ? AppColors.textPrimary : AppColors.primary;
 
-                // Error
-                if (_error != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
+    return Scaffold(
+      backgroundColor: AppColors.backgroundLight,
+      body: Stack(
+        children: [
+          Positioned(
+            top: -120,
+            right: -60,
+            child: _AmbientBlob(
+              size: 240,
+              color: AppColors.primaryMuted,
+            ),
+          ),
+          Positioned(
+            left: -70,
+            bottom: 120,
+            child: _AmbientBlob(
+              size: 180,
+              color: AppColors.accentMuted,
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.error.withValues(alpha: 0.2)),
+                      color: AppColors.backgroundCard.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 30,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(Icons.error_outline,
-                            color: AppColors.error, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(_error!,
-                              style: const TextStyle(
-                                  color: AppColors.error, fontSize: 13)),
+                        Row(
+                          children: [
+                            Container(
+                              width: 58,
+                              height: 58,
+                              decoration: BoxDecoration(
+                                color: roleAccent.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Icon(
+                                roleIcon,
+                                color: roleAccent,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _isLogin ? '$roleLabel Login' : '$roleLabel Sign Up',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isDriverLogin
+                                        ? 'Use your assigned account to manage live trips and updates.'
+                                        : 'Access nearby buses, ETAs, alerts, and trip updates.',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 14,
+                                      height: 1.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundSheet,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: AppColors.borderLight),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.route_rounded,
+                                color: roleAccent,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _isDriverLogin
+                                      ? 'Driver access is enabled only for accounts assigned by an admin.'
+                                      : 'New accounts can sign up with email or continue with Google.',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 13,
+                                    height: 1.5,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        if (_error != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: AppColors.error.withValues(alpha: 0.18),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline_rounded,
+                                  color: AppColors.error,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: GoogleFonts.spaceGrotesk(
+                                      color: AppColors.error,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                        ],
+                        if (!_isLogin) ...[
+                          _buildTextField(
+                            controller: _nameController,
+                            hint: 'Full Name',
+                            icon: Icons.person_outline_rounded,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        _buildTextField(
+                          controller: _emailController,
+                          hint: 'Email',
+                          icon: Icons.email_outlined,
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildTextField(
+                          controller: _passwordController,
+                          hint: 'Password',
+                          icon: Icons.lock_outline_rounded,
+                          obscure: true,
+                        ),
+                        const SizedBox(height: 18),
+                        SizedBox(
+                          height: 54,
+                          child: FilledButton(
+                            onPressed: _loading ? null : _handleEmailAuth,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: roleAccent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.2,
+                                    ),
+                                  )
+                                : Text(
+                                    _isLogin ? 'Continue with Email' : 'Create Account',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'or',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: AppColors.textTertiary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 54,
+                          child: OutlinedButton.icon(
+                            onPressed: _loading ? null : _handleGoogleAuth,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              side: const BorderSide(color: AppColors.border),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            icon: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: AppColors.backgroundLight,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'G',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            label: Text(
+                              'Continue with Google',
+                              style: GoogleFonts.spaceGrotesk(
+                                color: AppColors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          children: [
+                            Text(
+                              _isLogin
+                                  ? "Don't have an account?"
+                                  : 'Already have an account?',
+                              style: GoogleFonts.spaceGrotesk(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () => setState(() {
+                                      _isLogin = !_isLogin;
+                                      _error = null;
+                                    }),
+                              child: Text(
+                                _isLogin ? 'Create one' : 'Sign in',
+                                style: GoogleFonts.spaceGrotesk(
+                                  color: roleAccent,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _loading
+                              ? null
+                              : () => Navigator.pushReplacementNamed(
+                                    context,
+                                    AppRouter.roleSelection,
+                                  ),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: const Text('Back to role selection'),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Name field (sign up only)
-                if (!_isLogin) ...[
-                  _buildTextField(
-                    controller: _nameController,
-                    hint: 'Full Name',
-                    icon: Icons.person_outline,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-
-                // Email field
-                _buildTextField(
-                  controller: _emailController,
-                  hint: 'Email',
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
                 ),
-                const SizedBox(height: 12),
-
-                // Password field
-                _buildTextField(
-                  controller: _passwordController,
-                  hint: 'Password',
-                  icon: Icons.lock_outline,
-                  obscure: true,
-                ),
-                const SizedBox(height: 24),
-
-                // Sign In / Sign Up button
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _handleEmailAuth,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                            width: 22, height: 22,
-                            child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2),
-                          )
-                        : Text(
-                            _isLogin ? 'Sign In' : 'Create Account',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Divider
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.1))),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('or', style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3), fontSize: 13)),
-                    ),
-                    Expanded(child: Divider(color: Colors.white.withValues(alpha: 0.1))),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Google Sign-In
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: _loading ? null : _handleGoogleSignIn,
-                    icon: Image.network(
-                      'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                      width: 20, height: 20,
-                      errorBuilder: (_, e, st) =>
-                          const Icon(Icons.g_mobiledata, size: 24),
-                    ),
-                    label: Text(
-                      'Continue with Google',
-                      style: GoogleFonts.spaceGrotesk(
-                        color: Colors.white, fontWeight: FontWeight.w500),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Toggle login/signup
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _isLogin
-                          ? "Don't have an account? "
-                          : 'Already have an account? ',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 13),
-                    ),
-                    GestureDetector(
-                      onTap: () => setState(() {
-                        _isLogin = !_isLogin;
-                        _error = null;
-                      }),
-                      child: Text(
-                        _isLogin ? 'Sign Up' : 'Sign In',
-                        style: const TextStyle(
-                          color: Color(0xFF34D399),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -292,26 +453,61 @@ class _AuthScreenState extends State<AuthScreen> {
       controller: controller,
       obscureText: obscure,
       keyboardType: keyboardType,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
+      style: GoogleFonts.spaceGrotesk(
+        color: AppColors.textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+      ),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-        prefixIcon: Icon(icon, color: Colors.white.withValues(alpha: 0.3), size: 20),
+        hintStyle: GoogleFonts.spaceGrotesk(
+          color: AppColors.textTertiary,
+          fontSize: 14,
+        ),
+        prefixIcon: Icon(
+          icon,
+          color: AppColors.textTertiary,
+          size: 20,
+        ),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.05),
+        fillColor: Colors.white,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFF34D399), width: 1.5),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+}
+
+class _AmbientBlob extends StatelessWidget {
+  const _AmbientBlob({
+    required this.size,
+    required this.color,
+  });
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.75),
+        ),
       ),
     );
   }

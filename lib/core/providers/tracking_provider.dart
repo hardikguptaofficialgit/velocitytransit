@@ -1,26 +1,13 @@
 import 'dart:async';
+
+import 'package:geolocator/geolocator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
-import 'package:geolocator/geolocator.dart';
+
+import '../config/app_config.dart';
 import 'auth_provider.dart';
 
-/// Backend URL — change to your deployed URL in production
-const String backendUrl = String.fromEnvironment(
-  'BACKEND_URL',
-  defaultValue: 'http://10.0.2.2:4000', // Android Emulator → localhost
-);
-
-/// Live bus position from Socket.io
 class LiveBusPosition {
-  final String busId;
-  final String busNumber;
-  final String? routeId;
-  final double lat;
-  final double lng;
-  final double speed;
-  final double heading;
-  final String lastUpdated;
-
   LiveBusPosition({
     required this.busId,
     required this.busNumber,
@@ -32,46 +19,93 @@ class LiveBusPosition {
     required this.lastUpdated,
   });
 
+  final String busId;
+  final String busNumber;
+  final String? routeId;
+  final double lat;
+  final double lng;
+  final double speed;
+  final double heading;
+  final String lastUpdated;
+
   factory LiveBusPosition.fromMap(Map<String, dynamic> map) {
     return LiveBusPosition(
-      busId: map['busId'] ?? '',
-      busNumber: map['busNumber'] ?? '',
-      routeId: map['routeId'],
+      busId: map['busId']?.toString() ?? '',
+      busNumber: map['busNumber']?.toString() ?? '',
+      routeId: map['routeId']?.toString(),
       lat: (map['lat'] ?? 0).toDouble(),
       lng: (map['lng'] ?? 0).toDouble(),
       speed: (map['speed'] ?? 0).toDouble(),
       heading: (map['heading'] ?? 0).toDouble(),
-      lastUpdated: map['lastUpdated'] ?? '',
+      lastUpdated: map['lastUpdated']?.toString() ?? '',
     );
   }
 }
 
-/// Socket tracking state
+class DriverAssignment {
+  const DriverAssignment({
+    required this.busId,
+    required this.busNumber,
+    required this.driverId,
+    required this.driverName,
+    this.routeId,
+  });
+
+  final String busId;
+  final String busNumber;
+  final String driverId;
+  final String driverName;
+  final String? routeId;
+
+  factory DriverAssignment.fromMap(Map<String, dynamic> map) {
+    return DriverAssignment(
+      busId: map['busId']?.toString() ?? '',
+      busNumber: map['busNumber']?.toString() ?? '',
+      driverId: map['driverId']?.toString() ?? '',
+      driverName: map['driverName']?.toString() ?? '',
+      routeId: map['routeId']?.toString(),
+    );
+  }
+}
+
 class TrackingState {
-  final List<LiveBusPosition> livePositions;
-  final bool isConnected;
-  final bool isDriverTracking;
+  static const Object _unset = Object();
 
   const TrackingState({
     this.livePositions = const [],
     this.isConnected = false,
     this.isDriverTracking = false,
+    this.activeAssignment,
+    this.lastError,
   });
+
+  final List<LiveBusPosition> livePositions;
+  final bool isConnected;
+  final bool isDriverTracking;
+  final DriverAssignment? activeAssignment;
+  final String? lastError;
 
   TrackingState copyWith({
     List<LiveBusPosition>? livePositions,
     bool? isConnected,
     bool? isDriverTracking,
+    Object? activeAssignment = _unset,
+    Object? lastError = _unset,
   }) {
     return TrackingState(
       livePositions: livePositions ?? this.livePositions,
       isConnected: isConnected ?? this.isConnected,
       isDriverTracking: isDriverTracking ?? this.isDriverTracking,
+      activeAssignment: identical(activeAssignment, _unset)
+          ? this.activeAssignment
+          : activeAssignment as DriverAssignment?,
+      lastError: identical(lastError, _unset)
+          ? this.lastError
+          : lastError as String?,
     );
   }
 }
 
-/// Socket.io service for real-time bus tracking
 class TrackingNotifier extends Notifier<TrackingState> {
   io.Socket? _socket;
   StreamSubscription<Position>? _locationSub;
@@ -85,14 +119,13 @@ class TrackingNotifier extends Notifier<TrackingState> {
     return const TrackingState();
   }
 
-  /// Connect as passenger — receive bus positions
   Future<void> connectAsPassenger() async {
-    final authService = AuthService();
-    final token = await authService.getIdToken();
+    final token = await AuthService().getIdToken();
     if (token == null) return;
 
+    _socket?.disconnect();
     _socket = io.io(
-      backendUrl,
+      AppConfig.backendBaseUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])
           .setAuth({'token': token})
@@ -101,7 +134,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
     );
 
     _socket!.onConnect((_) {
-      state = state.copyWith(isConnected: true);
+      state = state.copyWith(isConnected: true, lastError: null);
       _socket!.emit('get:live');
     });
 
@@ -112,7 +145,7 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _socket!.on('live:positions', (data) {
       if (data is List) {
         final positions = data
-            .map((d) => LiveBusPosition.fromMap(Map<String, dynamic>.from(d)))
+            .map((item) => LiveBusPosition.fromMap(Map<String, dynamic>.from(item)))
             .toList();
         state = state.copyWith(livePositions: positions);
       }
@@ -120,13 +153,17 @@ class TrackingNotifier extends Notifier<TrackingState> {
 
     _socket!.on('bus:position', (data) {
       if (data is Map) {
-        final pos = LiveBusPosition.fromMap(Map<String, dynamic>.from(data));
+        final nextPosition = LiveBusPosition.fromMap(
+          Map<String, dynamic>.from(data),
+        );
         final updated = [...state.livePositions];
-        final idx = updated.indexWhere((p) => p.busId == pos.busId);
-        if (idx >= 0) {
-          updated[idx] = pos;
+        final existingIndex = updated.indexWhere(
+          (position) => position.busId == nextPosition.busId,
+        );
+        if (existingIndex == -1) {
+          updated.add(nextPosition);
         } else {
-          updated.add(pos);
+          updated[existingIndex] = nextPosition;
         }
         state = state.copyWith(livePositions: updated);
       }
@@ -134,10 +171,10 @@ class TrackingNotifier extends Notifier<TrackingState> {
 
     _socket!.on('bus:offline', (data) {
       if (data is Map) {
-        final busId = data['busId'];
+        final busId = data['busId']?.toString();
         state = state.copyWith(
           livePositions: state.livePositions
-              .where((p) => p.busId != busId)
+              .where((position) => position.busId != busId)
               .toList(),
         );
       }
@@ -146,14 +183,14 @@ class TrackingNotifier extends Notifier<TrackingState> {
     _socket!.connect();
   }
 
-  /// Connect as driver — send GPS coordinates
   Future<void> connectAsDriver() async {
-    final authService = AuthService();
-    final token = await authService.getIdToken();
+    final token = await AuthService().getIdToken();
     if (token == null) return;
 
+    _socket?.disconnect();
+    _locationSub?.cancel();
     _socket = io.io(
-      backendUrl,
+      AppConfig.backendBaseUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])
           .setAuth({'token': token})
@@ -162,60 +199,78 @@ class TrackingNotifier extends Notifier<TrackingState> {
     );
 
     _socket!.onConnect((_) {
-      state = state.copyWith(isConnected: true);
+      state = state.copyWith(isConnected: true, lastError: null);
       _socket!.emit('driver:start');
     });
 
     _socket!.on('driver:assignment', (data) {
-      state = state.copyWith(isDriverTracking: true);
+      if (data is Map) {
+        state = state.copyWith(
+          isDriverTracking: true,
+          activeAssignment: DriverAssignment.fromMap(
+            Map<String, dynamic>.from(data),
+          ),
+          lastError: null,
+        );
+      }
       _startSendingLocation();
     });
 
     _socket!.on('error', (data) {
-      // No active assignment
-      state = state.copyWith(isDriverTracking: false);
+      final message = data is Map ? data['message']?.toString() : data?.toString();
+      state = state.copyWith(
+        isDriverTracking: false,
+        activeAssignment: null,
+        lastError: message ?? 'Tracking unavailable',
+      );
     });
 
     _socket!.onDisconnect((_) {
-      state = state.copyWith(isConnected: false, isDriverTracking: false);
       _locationSub?.cancel();
+      state = state.copyWith(
+        isConnected: false,
+        isDriverTracking: false,
+        activeAssignment: null,
+      );
     });
 
     _socket!.connect();
   }
 
-  /// Start sending GPS location every 3 seconds
+  void disconnect() {
+    _socket?.disconnect();
+    _locationSub?.cancel();
+    state = const TrackingState();
+  }
+
   void _startSendingLocation() async {
-    // Request permission
-    LocationPermission permission = await Geolocator.checkPermission();
+    var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
+      state = state.copyWith(
+        isDriverTracking: false,
+        lastError: 'Location permission is required for driver tracking.',
+      );
       return;
     }
 
+    await _locationSub?.cancel();
     _locationSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // minimum 5 meters movement
+        distanceFilter: 5,
       ),
     ).listen((position) {
       _socket?.emit('driver:location', {
         'lat': position.latitude,
         'lng': position.longitude,
-        'speed': position.speed * 3.6, // m/s → km/h
+        'speed': position.speed * 3.6,
         'heading': position.heading,
       });
     });
-  }
-
-  /// Disconnect
-  void disconnect() {
-    _socket?.disconnect();
-    _locationSub?.cancel();
-    state = const TrackingState();
   }
 }
 

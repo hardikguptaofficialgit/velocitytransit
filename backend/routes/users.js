@@ -2,13 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
+const { roleCheck } = require('../middleware/roleCheck');
 
 
 /**
  * GET /api/users — List all users (Admin only)
  * Query: ?role=driver to filter by role
  */
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     let query = db.collection('users');
     if (req.query.role) {
@@ -26,7 +27,7 @@ router.get('/', verifyToken, async (req, res) => {
  * PATCH /api/users/:uid/role — Change user role (Admin only)
  * Body: { role: 'driver' | 'passenger' }
  */
-router.patch('/:uid/role', verifyToken, async (req, res) => {
+router.patch('/:uid/role', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const { uid } = req.params;
     const { role } = req.body;
@@ -49,7 +50,7 @@ router.patch('/:uid/role', verifyToken, async (req, res) => {
 /**
  * GET /api/users/drivers — List all drivers (Admin only)
  */
-router.get('/drivers', verifyToken, async (req, res) => {
+router.get('/drivers', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const snapshot = await db.collection('users')
       .where('role', '==', 'driver')
@@ -57,6 +58,21 @@ router.get('/drivers', verifyToken, async (req, res) => {
       .get();
     const drivers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json({ drivers });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/me', verifyToken, async (req, res) => {
+  try {
+    const updates = {};
+    if (req.body.name !== undefined) updates.name = req.body.name;
+    if (req.body.phone !== undefined) updates.phone = req.body.phone;
+    updates.updatedAt = new Date().toISOString();
+
+    await db.collection('users').doc(req.user.uid).set(updates, { merge: true });
+    const updated = await db.collection('users').doc(req.user.uid).get();
+    res.json({ user: { id: updated.id, ...updated.data() } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

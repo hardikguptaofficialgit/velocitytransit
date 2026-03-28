@@ -107,6 +107,15 @@ class _AlertCard extends StatelessWidget {
       case AlertType.emergency:
         typeColor = AppColors.error;
         typeIcon = DoodleIcons.alert(size: 20, color: typeColor);
+      case AlertType.tripStarted:
+        typeColor = AppColors.success;
+        typeIcon = const Icon(Icons.play_circle_fill_rounded, size: 20);
+      case AlertType.upcomingStop:
+        typeColor = AppColors.info;
+        typeIcon = const Icon(Icons.location_on_rounded, size: 20);
+      case AlertType.tripCompleted:
+        typeColor = AppColors.primary;
+        typeIcon = const Icon(Icons.flag_circle_rounded, size: 20);
     }
 
     final timeAgo = DateTime.now().difference(alert.timestamp);
