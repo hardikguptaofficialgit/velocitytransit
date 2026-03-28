@@ -26,6 +26,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLogin = true;
   bool _loading = false;
+  bool _showEmailForm = false; // Controls whether to show options or the form
   String? _error;
 
   bool get _isDriverLogin => widget.role == AppRoleChoice.driver;
@@ -122,313 +123,58 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final roleLabel = _isDriverLogin ? 'Driver' : 'Passenger';
-    final roleIcon =
-        _isDriverLogin ? Icons.directions_bus_rounded : Icons.person_pin_circle_rounded;
+    final roleIcon = _isDriverLogin
+        ? Icons.directions_bus_rounded
+        : Icons.person_pin_circle_rounded;
     final roleAccent = _isDriverLogin ? AppColors.textPrimary : AppColors.primary;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
-      body: Stack(
-        children: [
-          Positioned(
-            top: -120,
-            right: -60,
-            child: _AmbientBlob(
-              size: 240,
-              color: AppColors.primaryMuted,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Image.asset(
+                'assets/mobileauthbg.png',
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-          Positioned(
-            left: -70,
-            bottom: 120,
-            child: _AmbientBlob(
-              size: 180,
-              color: AppColors.accentMuted,
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.58),
+                ),
+              ),
             ),
-          ),
-          SafeArea(
-            child: Center(
+            Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 460),
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
-                      color: AppColors.backgroundCard.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: AppColors.border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 30,
-                          offset: const Offset(0, 12),
-                        ),
-                      ],
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.65),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 58,
-                              height: 58,
-                              decoration: BoxDecoration(
-                                color: roleAccent.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Icon(
-                                roleIcon,
-                                color: roleAccent,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _isLogin ? '$roleLabel Login' : '$roleLabel Sign Up',
-                                    style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _isDriverLogin
-                                        ? 'Use your assigned account to manage live trips and updates.'
-                                        : 'Access nearby buses, ETAs, alerts, and trip updates.',
-                                    style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 14,
-                                      height: 1.5,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildHeader(roleIcon, roleAccent, roleLabel),
                         const SizedBox(height: 24),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.backgroundSheet,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.borderLight),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.route_rounded,
-                                color: roleAccent,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  _isDriverLogin
-                                      ? 'Driver access is enabled only for accounts assigned by an admin.'
-                                      : 'New accounts can sign up with email or continue with Google.',
-                                  style: GoogleFonts.spaceGrotesk(
-                                    fontSize: 13,
-                                    height: 1.5,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        if (_error != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: AppColors.error.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: AppColors.error.withValues(alpha: 0.18),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.error_outline_rounded,
-                                  color: AppColors.error,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    _error!,
-                                    style: GoogleFonts.spaceGrotesk(
-                                      color: AppColors.error,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                        ],
-                        if (!_isLogin) ...[
-                          _buildTextField(
-                            controller: _nameController,
-                            hint: 'Full Name',
-                            icon: Icons.person_outline_rounded,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        _buildTextField(
-                          controller: _emailController,
-                          hint: 'Email',
-                          icon: Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 12),
-                        _buildTextField(
-                          controller: _passwordController,
-                          hint: 'Password',
-                          icon: Icons.lock_outline_rounded,
-                          obscure: true,
-                        ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          height: 54,
-                          child: FilledButton(
-                            onPressed: _loading ? null : _handleEmailAuth,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: roleAccent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: _loading
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.2,
-                                    ),
-                                  )
-                                : Text(
-                                    _isLogin ? 'Continue with Email' : 'Create Account',
-                                    style: GoogleFonts.spaceGrotesk(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            const Expanded(child: Divider()),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(
-                                'or',
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: AppColors.textTertiary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            const Expanded(child: Divider()),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 54,
-                          child: OutlinedButton.icon(
-                            onPressed: _loading ? null : _handleGoogleAuth,
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              side: const BorderSide(color: AppColors.border),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            icon: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: AppColors.backgroundLight,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'G',
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ),
-                            label: Text(
-                              'Continue with Google',
-                              style: GoogleFonts.spaceGrotesk(
-                                color: AppColors.textPrimary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 6,
-                          children: [
-                            Text(
-                              _isLogin
-                                  ? "Don't have an account?"
-                                  : 'Already have an account?',
-                              style: GoogleFonts.spaceGrotesk(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: _loading
-                                  ? null
-                                  : () => setState(() {
-                                      _isLogin = !_isLogin;
-                                      _error = null;
-                                    }),
-                              child: Text(
-                                _isLogin ? 'Create one' : 'Sign in',
-                                style: GoogleFonts.spaceGrotesk(
-                                  color: roleAccent,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: _loading
-                              ? null
-                              : () => Navigator.pushReplacementNamed(
-                                    context,
-                                    AppRouter.roleSelection,
-                                  ),
-                          icon: const Icon(Icons.arrow_back_rounded),
-                          label: const Text('Back to role selection'),
+                        _buildInfoBanner(roleAccent),
+                        const SizedBox(height: 24),
+                        if (_error != null) _buildErrorBanner(),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          child: _showEmailForm
+                              ? _buildEmailForm(roleAccent)
+                              : _buildAuthOptions(roleAccent),
                         ),
                       ],
                     ),
@@ -436,9 +182,343 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(IconData icon, Color accent, String roleLabel) {
+    return Row(
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(icon, color: accent, size: 26),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _isLogin ? '$roleLabel Login' : '$roleLabel Sign Up',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _isDriverLogin
+                    ? 'Manage your live trips.'
+                    : 'Access nearby ETAs & alerts.',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoBanner(Color accent) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundSheet,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: accent, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _isDriverLogin
+                  ? 'Driver access is enabled only for accounts assigned by an admin.'
+                  : 'Use your email or continue with Google to get started.',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 13,
+                height: 1.5,
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildErrorBanner() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.error.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _error!,
+                style: GoogleFonts.spaceGrotesk(
+                  color: AppColors.error,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthOptions(Color roleAccent) {
+    return Column(
+      key: const ValueKey('options'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 54,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _handleGoogleAuth,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: AppColors.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            icon: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: AppColors.backgroundLight,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'G',
+                style: GoogleFonts.spaceGrotesk(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            label: Text(
+              'Continue with Google',
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 54,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _showEmailForm = true;
+                _error = null; // Clear any existing errors
+              });
+            },
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: AppColors.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            icon: const Icon(Icons.email_outlined, color: AppColors.textPrimary, size: 22),
+            label: Text(
+              'Continue with Email',
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildBottomActions(roleAccent),
+      ],
+    );
+  }
+
+  Widget _buildEmailForm(Color roleAccent) {
+    return Column(
+      key: const ValueKey('email_form'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              onPressed: _loading
+                  ? null
+                  : () {
+                      setState(() {
+                        _showEmailForm = false;
+                        _error = null;
+                      });
+                    },
+              icon: const Icon(Icons.arrow_back_rounded),
+              padding: EdgeInsets.zero,
+              alignment: Alignment.centerLeft,
+              color: AppColors.textSecondary,
+            ),
+            Text(
+              _isLogin ? 'Sign in with Email' : 'Register with Email',
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (!_isLogin) ...[
+          _buildTextField(
+            controller: _nameController,
+            hint: 'Full Name',
+            icon: Icons.person_outline_rounded,
+          ),
+          const SizedBox(height: 12),
+        ],
+        _buildTextField(
+          controller: _emailController,
+          hint: 'Email Address',
+          icon: Icons.email_outlined,
+          keyboardType: TextInputType.emailAddress,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          controller: _passwordController,
+          hint: 'Password',
+          icon: Icons.lock_outline_rounded,
+          obscure: true,
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          height: 54,
+          child: FilledButton(
+            onPressed: _loading ? null : _handleEmailAuth,
+            style: FilledButton.styleFrom(
+              backgroundColor: roleAccent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 0, // Flat design
+            ),
+            child: _loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  )
+                : Text(
+                    _isLogin ? 'Log In' : 'Create Account',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildBottomActions(roleAccent),
+      ],
+    );
+  }
+
+  Widget _buildBottomActions(Color roleAccent) {
+    return Column(
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          children: [
+            Text(
+              _isLogin ? "Don't have an account?" : 'Already have an account?',
+              style: GoogleFonts.spaceGrotesk(
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            TextButton(
+              onPressed: _loading
+                  ? null
+                  : () {
+                      setState(() {
+                        _isLogin = !_isLogin;
+                        _error = null;
+                      });
+                    },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                _isLogin ? 'Create one' : 'Sign in',
+                style: GoogleFonts.spaceGrotesk(
+                  color: roleAccent,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        TextButton.icon(
+          onPressed: _loading
+              ? null
+              : () => Navigator.pushReplacementNamed(
+                    context,
+                    AppRouter.roleSelection,
+                  ),
+          icon: Icon(Icons.arrow_back_rounded, color: AppColors.textTertiary, size: 18),
+          label: Text(
+            'Back to role selection',
+            style: GoogleFonts.spaceGrotesk(
+              color: AppColors.textTertiary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -472,42 +552,18 @@ class _AuthScreenState extends State<AuthScreen> {
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.primary, width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      ),
-    );
-  }
-}
-
-class _AmbientBlob extends StatelessWidget {
-  const _AmbientBlob({
-    required this.size,
-    required this.color,
-  });
-
-  final double size;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withValues(alpha: 0.75),
-        ),
       ),
     );
   }

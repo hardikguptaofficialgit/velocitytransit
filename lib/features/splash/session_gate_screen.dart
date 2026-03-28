@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../driver/driver_home_screen.dart';
+import '../home/home_screen.dart';
 import 'role_selection_screen.dart';
 
 class SessionGateScreen extends ConsumerWidget {
@@ -44,7 +46,32 @@ class SessionGateScreen extends ConsumerWidget {
               },
             ),
           ),
-          data: (_) => const RoleSelectionScreen(),
+          data: (profile) {
+            if (profile == null) {
+              return const RoleSelectionScreen();
+            }
+
+            if (!profile.isActive) {
+              return _GateScaffold(
+                child: _StatusCard(
+                  title: 'Account disabled',
+                  message:
+                      'This account is currently inactive. Contact your administrator for access.',
+                  actionLabel: 'Sign out',
+                  onPressed: () async {
+                    await ref.read(authServiceProvider).signOut();
+                    ref.invalidate(userProfileProvider);
+                  },
+                ),
+              );
+            }
+
+            if (profile.isDriver) {
+              return const DriverHomeScreen();
+            }
+
+            return const HomeScreen();
+          },
         );
       },
     );

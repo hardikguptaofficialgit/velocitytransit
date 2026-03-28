@@ -90,6 +90,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final routeById = {for (final route in state.routes) route.id: route};
     final unreadAlerts = state.alerts.where((a) => !a.isRead).toList();
     final hasUnreadAlert = !_hideAlert && unreadAlerts.isNotEmpty;
+    final visibleMessage = state.lastError ?? (hasUnreadAlert ? unreadAlerts.first.message : null);
     final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
@@ -134,12 +135,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               bottom: MediaQuery.of(context).size.height * 0.34,
               child: _buildSheetLiftButton(),
             ),
-          if (hasUnreadAlert && !_isSearching)
+          if (visibleMessage != null && !_isSearching)
             Positioned(
               left: 16,
               right: 16,
               bottom: MediaQuery.of(context).size.height * 0.35,
-              child: _buildNotificationCard(unreadAlerts.first.message),
+              child: _buildNotificationCard(
+                visibleMessage,
+                isError: state.lastError != null,
+              ),
             ),
           DraggableScrollableSheet(
             controller: _sheetController,
@@ -740,7 +744,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildNotificationCard(String message) {
+  Widget _buildNotificationCard(String message, {bool isError = false}) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -749,7 +753,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         decoration: BoxDecoration(
           color: AppColors.backgroundCard,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: isError
+                ? AppColors.error.withValues(alpha: 0.22)
+                : AppColors.border,
+          ),
         ),
         child: Row(
           children: [
@@ -757,13 +765,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               width: 30,
               height: 30,
               decoration: BoxDecoration(
-                color: AppColors.accentMuted,
+                color: isError
+                    ? AppColors.error.withValues(alpha: 0.10)
+                    : AppColors.accentMuted,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.notifications_none_rounded,
+              child: Icon(
+                isError ? Icons.wifi_off_rounded : Icons.notifications_none_rounded,
                 size: 16,
-                color: AppColors.textPrimary,
+                color: isError ? AppColors.error : AppColors.textPrimary,
               ),
             ),
             const SizedBox(width: 10),

@@ -58,8 +58,7 @@ class PassengerLocationNotifier extends Notifier<PassengerLocationState> {
     ref.onDispose(() {
       _positionSubscription?.cancel();
     });
-    Future.microtask(checkStatus);
-    return const PassengerLocationState(isLoading: true);
+    return const PassengerLocationState(isLoading: false);
   }
 
   Future<void> checkStatus() async {
@@ -78,8 +77,14 @@ class PassengerLocationNotifier extends Notifier<PassengerLocationState> {
     );
 
     if (granted && serviceEnabled) {
+      if (_isTrackingStreamActive && state.position != null) {
+        return;
+      }
       await _startTracking();
+      return;
     }
+
+    await _stopTracking();
   }
 
   Future<void> requestPermission() async {
@@ -116,6 +121,8 @@ class PassengerLocationNotifier extends Notifier<PassengerLocationState> {
 
     if (granted) {
       await _startTracking();
+    } else {
+      await _stopTracking();
     }
   }
 
@@ -167,6 +174,12 @@ class PassengerLocationNotifier extends Notifier<PassengerLocationState> {
     } finally {
       _isStartingTracking = false;
     }
+  }
+
+  Future<void> _stopTracking() async {
+    await _positionSubscription?.cancel();
+    _positionSubscription = null;
+    _isTrackingStreamActive = false;
   }
 }
 

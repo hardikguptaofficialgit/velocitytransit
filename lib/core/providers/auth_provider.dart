@@ -75,7 +75,7 @@ class AuthService {
   }) : _auth = auth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance,
        _client = client ?? http.Client(),
-       _googleSignIn = googleSignIn ?? GoogleSignIn.instance;
+       _googleSignIn = googleSignIn ?? GoogleSignIn(scopes: const ['email']);
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -126,10 +126,17 @@ class AuthService {
 
     if (kIsWeb) {
       credential = await _auth.signInWithPopup(GoogleAuthProvider());
+    } else if (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux) {
+      throw Exception(
+        'Google sign-in is currently supported on Android, iOS, macOS, and web builds.',
+      );
     } else {
-      await _googleSignIn.initialize();
-      final googleUser = await _googleSignIn.authenticate();
-      final googleAuthentication = googleUser.authentication;
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        throw Exception('Google sign-in was cancelled.');
+      }
+      final googleAuthentication = await googleUser.authentication;
       final authCredential = GoogleAuthProvider.credential(
         accessToken: googleAuthentication.accessToken,
         idToken: googleAuthentication.idToken,
