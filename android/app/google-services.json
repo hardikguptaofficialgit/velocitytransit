@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "828589273527-6qvb4vcbe4olh6npsbbf61ug4k80pgs3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "00206d96df4dbd76b97e44ee7ba9800fd61db017"
+          }
+        },
+        {
           "client_id": "828589273527-8ldilclbk6ntgd1n8haj1j2hruvk8qln.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -43,6 +51,14 @@
           "android_info": {
             "package_name": "com.velocitytransit.velocity_transit",
             "certificate_hash": "cec9224bb90986ccf2fe187b1948005e4148de41"
+          }
+        },
+        {
+          "client_id": "828589273527-visfq38o8mhuuoi7ffqq8aaulfoc9rfk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velocitytransit.velocity_transit",
+            "certificate_hash": "8c08a776ad64ac2cf74c5bad04baa1e175d4c6a6"
           }
         },
         {
