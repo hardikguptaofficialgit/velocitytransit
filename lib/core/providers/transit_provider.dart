@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models.dart';
 import '../data/simulation_data.dart';
@@ -133,13 +134,17 @@ class TransitState {
 }
 
 /// Riverpod Notifier for all transit data (Riverpod v3 API)
-class TransitNotifier extends Notifier<TransitState> {
+/// Observes app lifecycle to pause simulation when backgrounded.
+class TransitNotifier extends Notifier<TransitState>
+    with WidgetsBindingObserver {
   final SimulationEngine _engine = SimulationEngine();
 
   @override
   TransitState build() {
+    WidgetsBinding.instance.addObserver(this);
     ref.onDispose(() {
       _engine.stop();
+      WidgetsBinding.instance.removeObserver(this);
     });
 
     // Initialize with simulation data
@@ -153,6 +158,18 @@ class TransitNotifier extends Notifier<TransitState> {
     Future.microtask(() => startSimulation());
 
     return initialState;
+  }
+
+  /// Pause simulation when app is backgrounded to save battery
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState appState) {
+    if (appState == AppLifecycleState.paused ||
+        appState == AppLifecycleState.inactive) {
+      _engine.stop();
+      state = state.copyWith(isSimulationRunning: false);
+    } else if (appState == AppLifecycleState.resumed) {
+      startSimulation();
+    }
   }
 
   void startSimulation() {
@@ -186,17 +203,7 @@ class TransitNotifier extends Notifier<TransitState> {
   void markAlertRead(String id) {
     state = state.copyWith(
       alerts: state.alerts.map((a) {
-        if (a.id == id) {
-          return TransitAlert(
-            id: a.id,
-            title: a.title,
-            message: a.message,
-            type: a.type,
-            timestamp: a.timestamp,
-            routeId: a.routeId,
-            isRead: true,
-          );
-        }
+        if (a.id == id) return a.copyWith(isRead: true);
         return a;
       }).toList(),
     );

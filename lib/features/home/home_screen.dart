@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/doodle_icons.dart';
 import '../../core/providers/transit_provider.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/widgets/shared_widgets.dart';
 import '../../core/providers/search_provider.dart';
@@ -42,10 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // ── Fullscreen Map ──
           const Positioned.fill(child: SimulatedMapView()),
 
-          // ── Background Layer ──
-          Positioned.fill(
-             child: Container(color: AppColors.backgroundLight),
-          ),
+
 
           // ── Top: Search bar ──
           Positioned(
@@ -233,7 +231,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Navigator.pushNamed(context, AppRouter.comparison);
                     break;
                   case 4:
-                    Navigator.pushNamed(context, AppRouter.admin);
+                    // Profile / Sign out
+                    _showProfileSheet();
                     break;
                 }
               },
@@ -279,11 +278,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   label: 'Compare',
                 ),
                 BottomNavigationBarItem(
-                  icon: DoodleIcons.settings(
+                  icon: Icon(
+                    Icons.person_outline_rounded,
                     size: 24,
                     color: _currentNavIndex == 4 ? AppColors.primary : AppColors.textTertiary,
                   ),
-                  label: 'Admin',
+                  label: 'Profile',
                 ),
               ],
           ),
@@ -495,6 +495,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showProfileSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.backgroundSheet,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetHandle(),
+              const SizedBox(height: 16),
+              const Icon(Icons.account_circle_rounded,
+                  size: 64, color: AppColors.primary),
+              const SizedBox(height: 12),
+              const Text(
+                'Passenger Mode',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await AuthService().signOut();
+                    if (mounted) {
+                      Navigator.pushReplacementNamed(context, AppRouter.auth);
+                    }
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign Out'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.error,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
     );
   }
 }

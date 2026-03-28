@@ -156,6 +156,26 @@ class TransitAlert {
     this.routeId,
     this.isRead = false,
   });
+
+  TransitAlert copyWith({
+    String? id,
+    String? title,
+    String? message,
+    AlertType? type,
+    DateTime? timestamp,
+    String? routeId,
+    bool? isRead,
+  }) {
+    return TransitAlert(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      type: type ?? this.type,
+      timestamp: timestamp ?? this.timestamp,
+      routeId: routeId ?? this.routeId,
+      isRead: isRead ?? this.isRead,
+    );
+  }
 }
 
 enum AlertType { delay, routeChange, serviceUpdate, emergency }

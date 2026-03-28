@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../features/splash/splash_screen.dart';
+import '../../features/auth/auth_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/route_planner/route_planner_screen.dart';
 import '../../features/live_tracking/live_tracking_screen.dart';
@@ -9,9 +10,11 @@ import '../../features/alerts/alerts_screen.dart';
 import '../../features/favorites/favorites_screen.dart';
 import '../../features/comparison/comparison_screen.dart';
 import '../../features/trip_playback/trip_playback_screen.dart';
+import '../../features/driver/driver_home_screen.dart';
 
 class AppRouter {
   static const String splash = '/';
+  static const String auth = '/auth';
   static const String home = '/home';
   static const String routePlanner = '/route-planner';
   static const String liveTracking = '/live-tracking';
@@ -21,11 +24,14 @@ class AppRouter {
   static const String favorites = '/favorites';
   static const String comparison = '/comparison';
   static const String tripPlayback = '/trip-playback';
+  static const String driverHome = '/driver-home';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
       case splash:
         return _buildRoute(const SplashScreen(), settings);
+      case auth:
+        return _buildRoute(const AuthScreen(), settings);
       case home:
         return _buildRoute(const HomeScreen(), settings);
       case routePlanner:
@@ -47,6 +53,8 @@ class AppRouter {
       case tripPlayback:
         final busId = settings.arguments as String? ?? '';
         return _buildRoute(TripPlaybackScreen(busId: busId), settings);
+      case driverHome:
+        return _buildRoute(const DriverHomeScreen(), settings);
       default:
         return _buildRoute(const HomeScreen(), settings);
     }

@@ -43,3 +43,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Analysis artifacts & scratch scripts
+analyze*.txt
+replace_names.dart
+
+# Backend (Node.js)
+backend/node_modules/
+backend/.env
+backend/firebase-service-account.json
+backend/*.log
+
+# Admin Web (React/Vite)
+admin_web/node_modules/
+admin_web/.env
+admin_web/dist/

@@ -7,6 +7,7 @@ import '../../../core/theme/doodle_icons.dart';
 import '../../../core/data/models.dart';
 import '../../../core/data/simulation_data.dart';
 import '../../../core/providers/transit_provider.dart';
+import '../../../core/providers/tracking_provider.dart';
 
 /// Interactive Map using flutter_map and OpenStreetMap
 class SimulatedMapView extends ConsumerStatefulWidget {
@@ -23,6 +24,10 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
   void initState() {
     super.initState();
     _mapController = MapController();
+    // Connect to Socket.io for live tracking
+    Future.microtask(() {
+      ref.read(trackingProvider.notifier).connectAsPassenger();
+    });
   }
 
   @override
@@ -34,34 +39,31 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(transitProvider);
+    final tracking = ref.watch(trackingProvider);
 
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
-        initialCenter: const LatLng(20.2961, 85.8245), // Bhubaneswar Center
+        initialCenter: const LatLng(20.2961, 85.8245),
         initialZoom: 13.0,
         maxZoom: 18.0,
         minZoom: 10.0,
       ),
       children: [
-        // Beautiful minimal light map theme (Carto Voyager)
         TileLayer(
           urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
           subdomains: const ['a', 'b', 'c', 'd'],
           userAgentPackageName: 'com.velocitytransit.app',
         ),
 
-        // Heatmap layer
         if (state.showHeatmap) _buildHeatmapLayer(),
-
-        // Routes
         _buildRoutesLayer(state.routes),
-
-        // Stops
         _buildStopsLayer(state.routes),
-
-        // Live buses
         _buildBusesLayer(state.buses, state.routes),
+
+        // ── Live tracked buses from Socket.io ──
+        if (tracking.livePositions.isNotEmpty)
+          _buildLiveBusesLayer(tracking.livePositions),
       ],
     );
   }
@@ -79,14 +81,13 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
       } else {
         color = AppColors.heatmapLow;
       }
-
       circles.add(
         CircleMarker(
           point: zone.center,
           color: color.withValues(alpha: 0.3),
           borderColor: color.withValues(alpha: 0.6),
           borderStrokeWidth: 1.5,
-          radius: zone.radius / 15.0, // Scale down virtual radius for map zoom presentation
+          radius: zone.radius / 15.0,
           useRadiusInMeter: false,
         ),
       );
@@ -99,7 +100,6 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
     for (final route in routes) {
       if (route.pathPoints.length < 2) continue;
       final color = AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length];
-      
       polylines.add(
         Polyline(
           points: route.pathPoints,
@@ -115,7 +115,6 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
     final markers = <Marker>[];
     for (final route in routes) {
       final color = AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length];
-      
       for (final stop in route.stops) {
         markers.add(
           Marker(
@@ -138,7 +137,6 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
 
   Widget _buildBusesLayer(List<Bus> buses, List<TransitRoute> routes) {
     final markers = <Marker>[];
-
     for (final bus in buses) {
       final route = routes.firstWhere((r) => r.id == bus.routeId);
       final routeColor = AppColors.busLineColors[route.colorIndex % AppColors.busLineColors.length];
@@ -147,13 +145,10 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
       switch (bus.occupancy) {
         case OccupancyLevel.low:
           occColor = AppColors.occupancyLow;
-          break;
         case OccupancyLevel.medium:
           occColor = AppColors.occupancyMedium;
-          break;
         case OccupancyLevel.high:
           occColor = AppColors.occupancyHigh;
-          break;
       }
 
       markers.add(
@@ -165,7 +160,6 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              // Bus background pill
               Container(
                 width: 38,
                 height: 38,
@@ -178,7 +172,6 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
                   child: DoodleIcons.bus(size: 20, color: AppColors.backgroundCard),
                 ),
               ),
-              // Occupancy indicator pip
               Positioned(
                 top: 0,
                 right: -2,
@@ -197,8 +190,73 @@ class _SimulatedMapViewState extends ConsumerState<SimulatedMapView> {
         ),
       );
     }
-    
-    // An animated layer representation ensures the markers render dynamically
+    return MarkerLayer(markers: markers);
+  }
+
+  /// Markers for live-tracked buses from the backend via Socket.io
+  Widget _buildLiveBusesLayer(List<LiveBusPosition> positions) {
+    final markers = <Marker>[];
+    for (final pos in positions) {
+      if (pos.lat == 0 && pos.lng == 0) continue;
+      markers.add(
+        Marker(
+          point: LatLng(pos.lat, pos.lng),
+          width: 56,
+          height: 56,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  pos.busNumber.isNotEmpty ? pos.busNumber : 'LIVE',
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 8, fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                    ),
+                  ),
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.directions_bus_rounded, color: Colors.white, size: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return MarkerLayer(markers: markers);
   }
 }

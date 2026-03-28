@@ -1,238 +1,707 @@
-import { 
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area 
-} from 'recharts';
-import { 
-  Bus, Users, Activity, Settings, 
-  Map as MapIcon, ShieldAlert, Cpu, Zap
+import { useState, useEffect, useCallback } from 'react';
+import { auth, googleProvider } from './config/firebase';
+import type { User } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  onAuthStateChanged,
+  signOut,
+} from 'firebase/auth';
+import { apiFetch } from './lib/api';
+import { io } from 'socket.io-client';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Bus, Users, MapPin, LogOut, Plus, Trash2, Shield,
+  Activity, Radio, UserCheck, AlertCircle, ChevronRight,
+  Clock, Gauge, Navigation, Zap,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 
-const activityData = [
-  { time: '06:00', load: 30 },
-  { time: '08:00', load: 85 },
-  { time: '10:00', load: 45 },
-  { time: '12:00', load: 50 },
-  { time: '14:00', load: 60 },
-  { time: '16:00', load: 75 },
-  { time: '18:00', load: 95 },
-  { time: '20:00', load: 40 },
-];
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-const SidebarItem = ({ icon: Icon, label, active = false }: any) => (
-  <motion.div 
-    whileHover={{ x: 5 }}
-    className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all duration-300 ${
-      active ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
-    }`}
-  >
-    <Icon size={20} className={active ? 'text-[#4A90E2]' : ''} />
-    <span className="font-medium text-sm tracking-wide">{label}</span>
-  </motion.div>
-);
+// ═══════════════ Types ═══════════════
+interface UserProfile {
+  uid: string; email: string; name: string; role: string;
+  phone?: string; isActive?: boolean;
+}
+interface BusData {
+  id: string; busNumber: string; routeId?: string;
+  capacity: number; status: string;
+}
+interface Assignment {
+  id: string; busId: string; driverId: string;
+  busNumber: string; driverName: string;
+  routeId?: string; isActive: boolean; startedAt: string;
+}
+interface LivePosition {
+  busId: string; busNumber: string; lat: number; lng: number;
+  speed: number; heading: number; driverId: string; lastUpdated: string;
+}
 
-const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
-  <motion.div 
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="glass-panel p-6 rounded-3xl"
-  >
-    <div className="flex justify-between items-start mb-4">
-      <div className={`p-3 rounded-2xl bg-opacity-20`} style={{ backgroundColor: `${color}20` }}>
-        <Icon size={24} color={color} />
-      </div>
-      <div className="text-right">
-        <div className="text-gray-400 text-sm font-medium">{title}</div>
-        <div className="text-3xl font-bold mt-1 text-white">{value}</div>
-      </div>
-    </div>
-    <div className="text-sm" style={{ color }}>{sub}</div>
-  </motion.div>
-);
+// ═══════════════ Stagger animation helpers ═══════════════
+const container = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.35 } } };
 
-const FleetMap = () => (
-  <div className="relative w-full h-full bg-[#111] overflow-hidden rounded-2xl border border-white/5">
-    <div className="absolute inset-0 opacity-20 bg-[url('https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png')]"></div>
-    <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0c] via-transparent to-transparent"></div>
-    
-    {/* Grid Overlay */}
-    <div className="absolute inset-0 grid grid-cols-12 grid-rows-12 opacity-10 pointer-events-none">
-      {[...Array(144)].map((_, i) => (
-        <div key={i} className="border-[0.5px] border-white/20"></div>
-      ))}
-    </div>
+// ═══════════════ Login Page ═══════════════
+function LoginPage({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-    {/* Simulated Buses */}
-    <motion.div 
-      animate={{ 
-        x: [40, 120, 180, 220, 180, 120, 40],
-        y: [30, 60, 110, 150, 110, 60, 30] 
-      }}
-      transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-      className="absolute w-2 h-2 bg-[#4A90E2] rounded-full shadow-[0_0_10px_#4A90E2]"
-    />
-    <motion.div 
-      animate={{ 
-        x: [250, 180, 100, 50, 100, 180, 250],
-        y: [80, 120, 180, 210, 180, 120, 80] 
-      }}
-      transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-      className="absolute w-2 h-2 bg-[#d44ae2] rounded-full shadow-[0_0_10px_#d44ae2]"
-    />
-     <motion.div 
-      animate={{ 
-        x: [100, 150, 200, 250, 200, 150, 100],
-        y: [200, 150, 100, 50, 100, 150, 200] 
-      }}
-      transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
-      className="absolute w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_10px_#10b981]"
-    />
+  const handleEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      onLogin();
+    } catch (err: any) {
+      setError(err.message?.includes('invalid') ? 'Invalid credentials' : err.message);
+    }
+    setLoading(false);
+  };
 
-    <div className="absolute top-4 left-4 glass p-2 rounded-lg text-[10px] font-mono text-gray-400">
-      LIVE_FLEET_COORDINATES
-    </div>
-  </div>
-);
+  const handleGoogle = async () => {
+    setLoading(true); setError('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+      onLogin();
+    } catch (err: any) {
+      setError(err.message);
+    }
+    setLoading(false);
+  };
 
-function App() {
   return (
-    <div className="flex h-screen w-full bg-[#0a0a0c] overflow-hidden p-6 gap-6 relative">
-      {/* Background flare */}
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-[#4A90E2] opacity-10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-[#d44ae2] opacity-10 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
+      <div className="mesh-bg" />
 
-      {/* Sidebar */}
-      <div className="w-64 flex flex-col glass-panel rounded-3xl p-6 relative z-10">
-        <div className="flex items-center gap-3 mb-12">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4A90E2] to-[#d44ae2] flex items-center justify-center">
-            <Zap size={20} className="text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white">VELOCITY<br/><span className="text-[#4A90E2]">TRANSIT</span></span>
-        </div>
-        
-        <div className="flex flex-col gap-2 flex-grow">
-          <SidebarItem icon={Activity} label="Live Operations" active />
-          <SidebarItem icon={MapIcon} label="Fleet Map" />
-          <SidebarItem icon={Cpu} label="AI Copilot" />
-          <SidebarItem icon={Users} label="Load Balancing" />
-          <SidebarItem icon={Bus} label="Drivers & Vehicles" />
-        </div>
-
-        <div className="mt-auto">
-          <SidebarItem icon={Settings} label="System Settings" />
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col gap-6 relative z-10">
-        <header className="flex justify-between items-center glass-panel px-8 py-4 rounded-3xl">
-          <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">System Overview</h1>
-            <p className="text-gray-400 text-sm mt-1">Real-time scheduling and route management intelligence</p>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-              </span>
-              <span className="text-sm font-medium text-gray-300">System Online (AI Active)</span>
-            </div>
-            <div className="h-10 w-10 rounded-full bg-gray-800 border-2 border-[#4A90E2] overflow-hidden" />
-          </div>
-        </header>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-6">
-          <StatCard title="Active Fleet" value="142" sub="8 buses entering service" icon={Bus} color="#4A90E2" />
-          <StatCard title="Total Passengers" value="12.4k" sub="+14% from last hour" icon={Users} color="#10b981" />
-          <StatCard title="Efficiency Score" value="98.2%" sub="AI optimized scheduling" icon={Activity} color="#8b5cf6" />
-          <StatCard title="Active Alerts" value="3" sub="2 minor delays, 1 detour" icon={ShieldAlert} color="#ef4444" />
-        </div>
-
-        {/* Main Dashboard Area */}
-        <div className="flex-1 grid grid-cols-3 gap-6">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="col-span-2 glass-panel rounded-3xl p-6 flex flex-col h-[400px]"
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+        className="w-full max-w-md relative z-10"
+      >
+        {/* Logo */}
+        <div className="text-center mb-10">
+          <motion.div
+            initial={{ scale: 0 }} animate={{ scale: 1 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+            className="inline-flex items-center gap-4 mb-4"
           >
-            <div className="flex-1 grid grid-cols-2 gap-6 min-h-0">
-               <div className="flex flex-col">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-lg font-semibold text-white">Predictive Load</h2>
-                    <div className="px-3 py-1 rounded-full bg-[#4A90E2]/20 text-[#4A90E2] text-[10px] font-bold font-mono">
-                      AI_PREDICT
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0 relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#4A90E2" stopOpacity={0.8}/>
-                            <stop offset="95%" stopColor="#4A90E2" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#2A2A2A" vertical={false} />
-                        <XAxis dataKey="time" stroke="#666" tick={{fill: '#888', fontSize: 10}} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#666" tick={{fill: '#888', fontSize: 10}} tickLine={false} axisLine={false} />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: 'rgba(10,10,12,0.9)', border: '1px solid #333', borderRadius: '12px' }}
-                          itemStyle={{ color: '#fff' }}
-                        />
-                        <Area type="monotone" dataKey="load" stroke="#4A90E2" strokeWidth={2} fillOpacity={1} fill="url(#colorLoad)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-               </div>
-               <div className="flex flex-col">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-lg font-semibold text-white">Live Fleet Tracking</h2>
-                    <div className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-500 text-[10px] font-bold font-mono">
-                      MAP_v4.2
-                    </div>
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    <FleetMap />
-                  </div>
-               </div>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
+              style={{ background: 'var(--accent-gradient)', boxShadow: '0 8px 32px rgba(16,185,129,0.25)' }}>
+              <Bus className="w-7 h-7 text-white" />
             </div>
+            <h1 className="text-4xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              Velocity
+            </h1>
           </motion.div>
-
-          {/* Right Column: Live Feed */}
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="glass-panel rounded-3xl p-6 flex flex-col"
-          >
-            <h2 className="text-lg font-semibold text-white mb-6">Live AI Event Log</h2>
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-              {[
-                { time: 'Just now', msg: 'Re-routing Bus 402 to avoid heavy traffic on Route 1', type: 'alert' },
-                { time: '2m ago', msg: 'Deployed 2 additional buses to Route 5 (High demand predicted)', type: 'system' },
-                { time: '8m ago', msg: 'Driver matching algorithm completed for next shift', type: 'system' },
-                { time: '12m ago', msg: 'Speed optimized across network. Network efficiency +3%', type: 'success' },
-                { time: '15m ago', msg: 'Bus 108 battery critically low. Sending return signal.', type: 'alert' },
-              ].map((log, i) => (
-                <div key={i} className="flex gap-4 p-3 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
-                  <div className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                    log.type === 'alert' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 
-                    log.type === 'success' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 
-                    'bg-[#4A90E2] shadow-[0_0_10px_rgba(74,144,226,0.5)]'
-                  }`} />
-                  <div>
-                    <div className="text-xs text-gray-400 mb-0.5">{log.time}</div>
-                    <div className="text-sm font-medium text-gray-200 leading-snug">{log.msg}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9375rem' }}>
+            Fleet Management Console
+          </p>
         </div>
-      </div>
+
+        {/* Card */}
+        <div className="login-glow">
+          <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px' }}>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                style={{
+                  marginBottom: '1.25rem', padding: '0.75rem 1rem',
+                  background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)',
+                  borderRadius: '12px', color: '#f87171', fontSize: '0.8125rem',
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                }}
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+              </motion.div>
+            )}
+
+            <form onSubmit={handleEmail} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem', marginBottom: '1.5rem' }}>
+              <input type="email" placeholder="Email address" value={email}
+                onChange={e => setEmail(e.target.value)} required className="input-field" />
+              <input type="password" placeholder="Password" value={password}
+                onChange={e => setPassword(e.target.value)} required className="input-field" />
+              <button type="submit" disabled={loading} className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '0.75rem 1.25rem', borderRadius: '12px', fontSize: '0.9375rem' }}>
+                {loading ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Signing in...
+                  </span>
+                ) : 'Sign In'}
+              </button>
+            </form>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--glass-border)' }} />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--glass-border)' }} />
+            </div>
+
+            <button onClick={handleGoogle} disabled={loading}
+              className="input-field"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
+                cursor: 'pointer', fontWeight: 500, padding: '0.75rem', borderRadius: '12px',
+                transition: 'all 0.25s ease',
+              }}
+              onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'rgba(148,163,184,0.3)'; }}
+              onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'rgba(148,163,184,0.1)'; }}
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              Sign in with Google
+            </button>
+          </div>
+        </div>
+
+        <p style={{ textAlign: 'center', marginTop: '2rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          Velocity Transit · Real-time fleet intelligence
+        </p>
+      </motion.div>
     </div>
   );
 }
 
-export default App;
+// ═══════════════ Dashboard ═══════════════
+function Dashboard() {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [tab, setTab] = useState<'overview' | 'buses' | 'drivers' | 'assignments'>('overview');
+  const [token, setToken] = useState('');
+
+  // Data states
+  const [buses, setBuses] = useState<BusData[]>([]);
+  const [drivers, setDrivers] = useState<UserProfile[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [livePositions, setLivePositions] = useState<LivePosition[]>([]);
+
+  // Forms
+  const [newBusNumber, setNewBusNumber] = useState('');
+  const [newBusCapacity, setNewBusCapacity] = useState(40);
+  const [assignBusId, setAssignBusId] = useState('');
+  const [assignDriverId, setAssignDriverId] = useState('');
+
+  // ── Fetch profile on mount ──
+  useEffect(() => {
+    if (!user || !token) return;
+    apiFetch('/api/auth/me?source=admin_web', token)
+      .then(data => setProfile(data.user))
+      .catch(console.error);
+  }, [user, token]);
+
+  // ── Socket.io connection (connects AFTER profile is loaded, so role is correct) ──
+  useEffect(() => {
+    if (!token || !profile) return;
+    const s = io(API_URL, { auth: { token } });
+    s.on('connect', () => console.log('Socket connected'));
+    s.on('bus:position', (pos: LivePosition) => {
+      setLivePositions(prev => {
+        const idx = prev.findIndex(p => p.busId === pos.busId);
+        if (idx >= 0) { const next = [...prev]; next[idx] = pos; return next; }
+        return [...prev, pos];
+      });
+    });
+    s.on('bus:offline', ({ busId }: { busId: string }) => {
+      setLivePositions(prev => prev.filter(p => p.busId !== busId));
+    });
+    s.emit('get:live');
+    s.on('live:positions', (positions: LivePosition[]) => setLivePositions(positions));
+    return () => { s.disconnect(); };
+  }, [token, profile]);
+
+  // ── Fetch data ──
+  const fetchAll = useCallback(async () => {
+    if (!token) return;
+    try {
+      const [busRes, userRes, assignRes] = await Promise.all([
+        apiFetch('/api/buses', token),
+        apiFetch('/api/users', token),
+        apiFetch('/api/assignments?active=true', token),
+      ]);
+      setBuses(busRes.buses || []);
+      setAllUsers(userRes.users || []);
+      setDrivers((userRes.users || []).filter((u: UserProfile) => u.role === 'driver'));
+      setAssignments(assignRes.assignments || []);
+    } catch (err) {
+      console.error('Fetch error:', err);
+    }
+  }, [token]);
+
+  useEffect(() => { if (token) fetchAll(); }, [token, fetchAll]);
+
+  // ── Auth listener ──
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        const t = await u.getIdToken();
+        setToken(t);
+      }
+    });
+  }, []);
+
+  // ── Actions ──
+  const addBus = async () => {
+    if (!newBusNumber.trim()) return;
+    await apiFetch('/api/buses', token, {
+      method: 'POST',
+      body: JSON.stringify({ busNumber: newBusNumber, capacity: newBusCapacity }),
+    });
+    setNewBusNumber(''); setNewBusCapacity(40);
+    fetchAll();
+  };
+
+  const deleteBus = async (id: string) => {
+    await apiFetch(`/api/buses/${id}`, token, { method: 'DELETE' });
+    fetchAll();
+  };
+
+  const promoteToDriver = async (uid: string) => {
+    await apiFetch(`/api/users/${uid}/role`, token, {
+      method: 'PATCH', body: JSON.stringify({ role: 'driver' }),
+    });
+    fetchAll();
+  };
+
+  const demoteToPassenger = async (uid: string) => {
+    await apiFetch(`/api/users/${uid}/role`, token, {
+      method: 'PATCH', body: JSON.stringify({ role: 'passenger' }),
+    });
+    fetchAll();
+  };
+
+  const assignBus = async () => {
+    if (!assignBusId || !assignDriverId) return;
+    const bus = buses.find(b => b.id === assignBusId);
+    const driver = drivers.find(d => d.uid === assignDriverId);
+    await apiFetch('/api/assignments', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        busId: assignBusId,
+        driverId: assignDriverId,
+        busNumber: bus?.busNumber || '',
+        driverName: driver?.name || '',
+      }),
+    });
+    setAssignBusId(''); setAssignDriverId('');
+    fetchAll();
+  };
+
+  const deactivateAssignment = async (id: string) => {
+    await apiFetch(`/api/assignments/${id}/deactivate`, token, { method: 'PATCH' });
+    fetchAll();
+  };
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+        <div className="loader" />
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: 'overview' as const, label: 'Overview', icon: Activity },
+    { id: 'buses' as const, label: 'Buses', icon: Bus },
+    { id: 'drivers' as const, label: 'Drivers', icon: Users },
+    { id: 'assignments' as const, label: 'Assignments', icon: Radio },
+  ];
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
+      <div className="mesh-bg" />
+
+      {/* ── Sidebar ── */}
+      <aside className="sidebar">
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
+          <div style={{
+            width: '42px', height: '42px', borderRadius: '14px',
+            background: 'var(--accent-gradient)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 16px rgba(16,185,129,0.2)',
+          }}>
+            <Bus className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+              Velocity
+            </h1>
+            <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.02em' }}>
+              ADMIN PANEL
+            </p>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`nav-item ${tab === t.id ? 'active' : ''}`}>
+              <t.icon style={{ width: '18px', height: '18px' }} />
+              {t.label}
+              {t.id === 'assignments' && assignments.length > 0 && (
+                <span className="badge" style={{
+                  marginLeft: 'auto',
+                  background: 'rgba(16,185,129,0.12)',
+                  color: '#34d399',
+                }}>
+                  {assignments.length}
+                </span>
+              )}
+              {t.id === 'overview' && livePositions.length > 0 && (
+                <span style={{ marginLeft: 'auto' }}><span className="live-dot" /></span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* User footer */}
+        <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px',
+              background: 'linear-gradient(135deg, #8b5cf6, #a855f7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '0.8125rem', fontWeight: 700, color: 'white',
+            }}>
+              {profile.name?.charAt(0)?.toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: '0.875rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
+                {profile.name}
+              </p>
+              <p style={{ fontSize: '0.6875rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <Shield style={{ width: '10px', height: '10px' }} /> Admin
+              </p>
+            </div>
+          </div>
+          <button onClick={() => signOut(auth)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.5rem 0.75rem', fontSize: '0.8125rem', color: 'var(--text-muted)',
+              background: 'none', border: '1px solid transparent', borderRadius: '8px',
+              cursor: 'pointer', transition: 'all 0.25s ease',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLElement).style.color = '#f87171';
+              (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.06)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(239,68,68,0.1)';
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
+              (e.currentTarget as HTMLElement).style.background = 'none';
+              (e.currentTarget as HTMLElement).style.borderColor = 'transparent';
+            }}
+          >
+            <LogOut style={{ width: '14px', height: '14px' }} /> Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main Content ── */}
+      <main style={{ marginLeft: 'var(--sidebar-width)', padding: '2rem 2.5rem', position: 'relative', zIndex: 1 }}>
+        <AnimatePresence mode="wait">
+
+          {/* ════════ OVERVIEW ════════ */}
+          {tab === 'overview' && (
+            <motion.div key="overview" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+              <h2 className="page-title">Fleet Overview</h2>
+
+              {/* Stats Grid */}
+              <motion.div variants={container} initial="hidden" animate="show"
+                style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+                {[
+                  { label: 'Total Buses', value: buses.length, icon: Bus, gradient: 'linear-gradient(135deg, #3b82f6, #06b6d4)', shadow: 'rgba(59,130,246,0.2)' },
+                  { label: 'Active Drivers', value: drivers.length, icon: UserCheck, gradient: 'linear-gradient(135deg, #10b981, #34d399)', shadow: 'rgba(16,185,129,0.2)' },
+                  { label: 'Live Tracking', value: livePositions.length, icon: Radio, gradient: 'linear-gradient(135deg, #f59e0b, #ef4444)', shadow: 'rgba(245,158,11,0.2)' },
+                  { label: 'Assignments', value: assignments.length, icon: MapPin, gradient: 'linear-gradient(135deg, #8b5cf6, #a855f7)', shadow: 'rgba(139,92,246,0.2)' },
+                ].map((s, i) => (
+                  <motion.div key={i} variants={item} className="stat-card">
+                    <div className="icon-badge" style={{ background: s.gradient, boxShadow: `0 4px 16px ${s.shadow}`, marginBottom: '1rem' }}>
+                      <s.icon className="w-5 h-5 text-white" />
+                    </div>
+                    <p style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1 }}>{s.value}</p>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.375rem', fontWeight: 500 }}>{s.label}</p>
+                  </motion.div>
+                ))}
+              </motion.div>
+
+              {/* Live Positions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <span className="live-dot" />
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Live Bus Positions</h3>
+                {livePositions.length > 0 && (
+                  <span className="badge" style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>
+                    {livePositions.length} active
+                  </span>
+                )}
+              </div>
+
+              {livePositions.length === 0 ? (
+                <div className="empty-state">
+                  <Radio style={{ width: '32px', height: '32px', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                  <p style={{ fontWeight: 500 }}>No buses currently being tracked</p>
+                  <p style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>Assign a bus to a driver to start live tracking</p>
+                </div>
+              ) : (
+                <motion.div variants={container} initial="hidden" animate="show"
+                  style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.875rem' }}>
+                  {livePositions.map(pos => (
+                    <motion.div key={pos.busId} variants={item} className="glass-card" style={{ padding: '1.25rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+                        <span style={{ fontWeight: 700, color: '#34d399', fontSize: '1rem' }}>{pos.busNumber}</span>
+                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock style={{ width: '10px', height: '10px' }} />
+                          {new Date(pos.lastUpdated).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                          <MapPin style={{ width: '13px', height: '13px', color: '#3b82f6' }} />
+                          {pos.lat.toFixed(4)}, {pos.lng.toFixed(4)}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                            <Gauge style={{ width: '13px', height: '13px', color: '#f59e0b' }} />
+                            {pos.speed.toFixed(0)} km/h
+                          </span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                            <Navigation style={{ width: '13px', height: '13px', color: '#a855f7' }} />
+                            {pos.heading.toFixed(0)}°
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+
+          {/* ════════ BUSES ════════ */}
+          {tab === 'buses' && (
+            <motion.div key="buses" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+              <h2 className="page-title">Bus Management</h2>
+
+              {/* Add Bus Form */}
+              <div className="form-row" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Bus Number
+                  </label>
+                  <input value={newBusNumber} onChange={e => setNewBusNumber(e.target.value)}
+                    placeholder="e.g. OD-02-1234" className="input-field" />
+                </div>
+                <div style={{ width: '140px' }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Capacity
+                  </label>
+                  <input type="number" value={newBusCapacity} onChange={e => setNewBusCapacity(+e.target.value)}
+                    className="input-field" />
+                </div>
+                <button onClick={addBus} className="btn-primary">
+                  <Plus className="w-4 h-4" /> Add Bus
+                </button>
+              </div>
+
+              {/* Bus List */}
+              <motion.div variants={container} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {buses.map(bus => (
+                  <motion.div key={bus.id} variants={item} className="list-row">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div className="icon-badge" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                        <Bus style={{ width: '18px', height: '18px', color: '#60a5fa' }} />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 600 }}>{bus.busNumber}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Capacity: {bus.capacity} · <span style={{ color: bus.status === 'active' ? '#34d399' : '#f87171' }}>{bus.status}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => deleteBus(bus.id)} className="btn-danger">
+                      <Trash2 className="w-3.5 h-3.5" /> Remove
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+              {buses.length === 0 && (
+                <div className="empty-state">
+                  <Bus style={{ width: '32px', height: '32px', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                  <p style={{ fontWeight: 500 }}>No buses registered yet</p>
+                  <p style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>Add your first bus using the form above</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* ════════ DRIVERS ════════ */}
+          {tab === 'drivers' && (
+            <motion.div key="drivers" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+              <h2 className="page-title">Driver Management</h2>
+
+              {/* Active Drivers */}
+              <p className="section-header">Active Drivers</p>
+              <motion.div variants={container} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '2rem' }}>
+                {drivers.map(d => (
+                  <motion.div key={d.uid} variants={item} className="list-row" style={{ borderColor: 'rgba(16,185,129,0.12)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div className="icon-badge" style={{ borderRadius: '50%', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                        <UserCheck style={{ width: '18px', height: '18px', color: '#34d399' }} />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 600 }}>{d.name}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{d.email}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => demoteToPassenger(d.uid)} className="btn-danger">
+                      Remove Driver
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+              {drivers.length === 0 && (
+                <div className="empty-state" style={{ marginBottom: '2rem' }}>
+                  <UserCheck style={{ width: '32px', height: '32px', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                  <p style={{ fontWeight: 500 }}>No drivers yet</p>
+                  <p style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>Promote a passenger below to make them a driver</p>
+                </div>
+              )}
+
+              {/* All Passengers → Promote */}
+              <p className="section-header">All Users (Passengers)</p>
+              <motion.div variants={container} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {allUsers.filter(u => u.role === 'passenger').map(u => (
+                  <motion.div key={u.uid} variants={item} className="list-row">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div className="icon-badge" style={{
+                        borderRadius: '50%',
+                        background: 'rgba(100,116,139,0.12)',
+                        border: '1px solid rgba(100,116,139,0.15)',
+                        fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-secondary)',
+                      }}>
+                        {u.name?.charAt(0)?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 600 }}>{u.name}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => promoteToDriver(u.uid)} className="btn-success">
+                      <ChevronRight className="w-3.5 h-3.5" /> Make Driver
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </motion.div>
+          )}
+
+          {/* ════════ ASSIGNMENTS ════════ */}
+          {tab === 'assignments' && (
+            <motion.div key="assignments" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+              <h2 className="page-title">Bus → Driver Assignments</h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+                Assigning a bus to a driver <strong style={{ color: '#34d399' }}>starts live GPS tracking</strong>.
+                Deactivating it <strong style={{ color: '#f87171' }}>stops tracking</strong>.
+              </p>
+
+              {/* Assign Form */}
+              <div className="form-row" style={{ marginBottom: '1.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Select Bus
+                  </label>
+                  <select value={assignBusId} onChange={e => setAssignBusId(e.target.value)} className="input-field">
+                    <option value="">Choose a bus...</option>
+                    {buses.filter(b => b.status === 'active').map(b => (
+                      <option key={b.id} value={b.id}>{b.busNumber}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Select Driver
+                  </label>
+                  <select value={assignDriverId} onChange={e => setAssignDriverId(e.target.value)} className="input-field">
+                    <option value="">Choose a driver...</option>
+                    {drivers.map(d => (
+                      <option key={d.uid} value={d.uid}>{d.name} ({d.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={assignBus} className="btn-primary">
+                  <Zap className="w-4 h-4" /> Assign & Track
+                </button>
+              </div>
+
+              {/* Active Assignments */}
+              <motion.div variants={container} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {assignments.map(a => (
+                  <motion.div key={a.id} variants={item} className="list-row" style={{ borderColor: 'rgba(16,185,129,0.12)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Bus style={{ width: '16px', height: '16px', color: '#60a5fa' }} />
+                        <span style={{ fontWeight: 600 }}>{a.busNumber || a.busId}</span>
+                      </div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '1.25rem' }}>→</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <UserCheck style={{ width: '16px', height: '16px', color: '#34d399' }} />
+                        <span>{a.driverName || a.driverId}</span>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <span className="live-dot" style={{ width: '6px', height: '6px' }} />
+                        Since {new Date(a.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <button onClick={() => deactivateAssignment(a.id)} className="btn-danger">
+                      Stop Tracking
+                    </button>
+                  </motion.div>
+                ))}
+              </motion.div>
+              {assignments.length === 0 && (
+                <div className="empty-state">
+                  <Radio style={{ width: '32px', height: '32px', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                  <p style={{ fontWeight: 500 }}>No active assignments</p>
+                  <p style={{ fontSize: '0.8125rem', marginTop: '0.25rem' }}>Create an assignment above to start tracking</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════ Root App ═══════════════
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+        <div className="loader" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage onLogin={() => {}} />;
+  }
+
+  return <Dashboard />;
+}

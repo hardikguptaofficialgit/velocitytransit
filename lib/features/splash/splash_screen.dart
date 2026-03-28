@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/router/app_router.dart';
 
@@ -49,10 +51,41 @@ class _SplashScreenState extends State<SplashScreen>
     _logoController.forward();
 
     Timer(const Duration(milliseconds: 3200), () {
+      _navigateBasedOnAuth();
+    });
+  }
+
+  Future<void> _navigateBasedOnAuth() async {
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      Navigator.pushReplacementNamed(context, AppRouter.auth);
+      return;
+    }
+
+    // Check role from Firestore
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (!mounted) return;
+
+      final role = doc.data()?['role'] as String? ?? 'passenger';
+
+      if (role == 'driver') {
+        Navigator.pushReplacementNamed(context, AppRouter.driverHome);
+      } else {
+        Navigator.pushReplacementNamed(context, AppRouter.home);
+      }
+    } catch (e) {
+      // Fallback to home if Firestore read fails
       if (mounted) {
         Navigator.pushReplacementNamed(context, AppRouter.home);
       }
-    });
+    }
   }
 
   @override
