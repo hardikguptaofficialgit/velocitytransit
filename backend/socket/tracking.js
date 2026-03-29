@@ -1,4 +1,5 @@
 const { auth, db } = require('../config/firebase');
+const { getDemoLivePositions } = require('../services/demoTransit');
 
 /**
  * Socket.io real-time tracking handler.
@@ -138,7 +139,10 @@ function setupTracking(io) {
         const snapshot = await db.collection('liveLocations')
           .where('isOnline', '==', true)
           .get();
-        const positions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const positions = [
+          ...getDemoLivePositions(),
+          ...snapshot.docs.map(doc => ({ id: doc.id, source: 'real', isDemo: false, ...doc.data() })),
+        ];
         socket.emit('live:positions', positions);
       } catch (err) {
         socket.emit('error', { message: err.message });

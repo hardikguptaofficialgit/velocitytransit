@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
 const { roleCheck } = require('../middleware/roleCheck');
+const { getDemoBuses, mergeRecords } = require('../services/demoTransit');
 
 
 /**
@@ -10,8 +11,18 @@ const { roleCheck } = require('../middleware/roleCheck');
  */
 router.get('/', verifyToken, async (req, res) => {
   try {
+    const includeInactive = req.query.includeInactive === 'true';
+    const includeDemo = req.query.includeDemo !== 'false';
+
     const snapshot = await db.collection('buses').get();
-    const buses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const realBuses = snapshot.docs
+      .map(doc => ({ id: doc.id, source: 'real', isDemo: false, readOnly: false, ...doc.data() }))
+      .filter((bus) => includeInactive || bus.status !== 'inactive');
+
+    const buses = includeDemo
+      ? mergeRecords(realBuses, getDemoBuses())
+      : realBuses;
+
     res.json({ buses });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -50,6 +61,10 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
 router.patch('/:id', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
     const { id } = req.params;
+    if (id.startsWith('demo_')) {
+      return res.status(400).json({ error: 'Demo buses are read-only' });
+    }
+
     const updates = {};
     
     const allowed = ['busNumber', 'routeId', 'capacity', 'status'];
@@ -70,6 +85,10 @@ router.patch('/:id', verifyToken, roleCheck('admin'), async (req, res) => {
  */
 router.delete('/:id', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
+    if (req.params.id.startsWith('demo_')) {
+      return res.status(400).json({ error: 'Demo buses cannot be deactivated' });
+    }
+
     await db.collection('buses').doc(req.params.id).update({ 
       status: 'inactive',
       updatedAt: new Date().toISOString(),

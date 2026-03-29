@@ -3,16 +3,28 @@ const router = express.Router();
 const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
 const { roleCheck } = require('../middleware/roleCheck');
+const { getDemoLivePositions, mergeRecords } = require('../services/demoTransit');
 
 /**
  * GET /api/tracking/live — Get all active bus positions (Any user)
  */
 router.get('/live', verifyToken, async (req, res) => {
   try {
+    const includeDemo = req.query.includeDemo !== 'false';
     const snapshot = await db.collection('liveLocations')
       .where('isOnline', '==', true)
       .get();
-    const positions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const realPositions = snapshot.docs.map(doc => ({
+      id: doc.id,
+      source: 'real',
+      isDemo: false,
+      ...doc.data(),
+    }));
+    const positions = includeDemo
+      ? mergeRecords(realPositions, getDemoLivePositions(), 'busId')
+      : realPositions;
+
     res.json({ positions });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -24,6 +36,14 @@ router.get('/live', verifyToken, async (req, res) => {
  */
 router.get('/bus/:busId', verifyToken, async (req, res) => {
   try {
+    if (req.params.busId.startsWith('demo_')) {
+      const position = getDemoLivePositions().find((item) => item.busId === req.params.busId);
+      if (!position) {
+        return res.status(404).json({ error: 'Bus not currently tracked' });
+      }
+      return res.json({ position });
+    }
+
     const doc = await db.collection('liveLocations').doc(req.params.busId).get();
     if (!doc.exists) {
       return res.status(404).json({ error: 'Bus not currently tracked' });

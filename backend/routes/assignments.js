@@ -4,6 +4,7 @@ const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
 const { roleCheck } = require('../middleware/roleCheck');
 const { sendTransitNotification } = require('../services/notifications');
+const { getDemoAssignments } = require('../services/demoTransit');
 
 
 /**
@@ -12,19 +13,28 @@ const { sendTransitNotification } = require('../services/notifications');
  */
 router.get('/', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
+    const includeDemo = req.query.includeDemo !== 'false';
     let query = db.collection('assignments');
     if (req.query.active === 'true') {
       query = query.where('isActive', '==', true);
     }
     const snapshot = await query.get();
     const assignments = snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .map(doc => ({ id: doc.id, source: 'real', isDemo: false, readOnly: false, ...doc.data() }))
       .sort((a, b) => {
         const aTime = Date.parse(a.startedAt || '') || 0;
         const bTime = Date.parse(b.startedAt || '') || 0;
         return bTime - aTime;
       });
-    res.json({ assignments });
+
+    const mergedAssignments = includeDemo && req.query.active === 'true'
+      ? [...getDemoAssignments(), ...assignments].sort((a, b) => {
+          const aTime = Date.parse(a.startedAt || '') || 0;
+          const bTime = Date.parse(b.startedAt || '') || 0;
+          return bTime - aTime;
+        })
+      : assignments;
+    res.json({ assignments: mergedAssignments });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -35,11 +45,23 @@ router.get('/', verifyToken, roleCheck('admin'), async (req, res) => {
  */
 router.get('/active', verifyToken, async (req, res) => {
   try {
+    const includeDemo = req.query.includeDemo !== 'false';
     const snapshot = await db.collection('assignments')
       .where('isActive', '==', true)
       .get();
-    const assignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json({ assignments });
+
+    const assignments = snapshot.docs.map(doc => ({
+      id: doc.id,
+      source: 'real',
+      isDemo: false,
+      readOnly: false,
+      ...doc.data(),
+    }));
+
+    const mergedAssignments = includeDemo
+      ? [...getDemoAssignments(), ...assignments]
+      : assignments;
+    res.json({ assignments: mergedAssignments });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -78,6 +100,9 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
 
     if (!busId || !driverId) {
       return res.status(400).json({ error: 'busId and driverId are required' });
+    }
+    if (String(busId).startsWith('demo_')) {
+      return res.status(400).json({ error: 'Demo buses are already simulated and cannot be reassigned' });
     }
 
     const busDoc = await db.collection('buses').doc(busId).get();
@@ -158,6 +183,10 @@ router.post('/', verifyToken, roleCheck('admin'), async (req, res) => {
  */
 router.patch('/:id/deactivate', verifyToken, roleCheck('admin'), async (req, res) => {
   try {
+    if (req.params.id.startsWith('demo_assignment_')) {
+      return res.status(400).json({ error: 'Demo assignments are generated automatically' });
+    }
+
     const assignmentDoc = await db.collection('assignments').doc(req.params.id).get();
     
     if (!assignmentDoc.exists) {
