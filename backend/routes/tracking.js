@@ -4,6 +4,7 @@ const { db } = require('../config/firebase');
 const { verifyToken } = require('../middleware/auth');
 const { roleCheck } = require('../middleware/roleCheck');
 const { getDemoLivePositions, mergeRecords } = require('../services/demoTransit');
+const { getSeedFleetLivePositions } = require('../services/seedFleetSimulator');
 
 /**
  * GET /api/tracking/live — Get all active bus positions (Any user)
@@ -14,6 +15,7 @@ router.get('/live', verifyToken, async (req, res) => {
     const snapshot = await db.collection('liveLocations')
       .where('isOnline', '==', true)
       .get();
+    const seededPositions = await getSeedFleetLivePositions(db);
 
     const realPositions = snapshot.docs.map(doc => ({
       id: doc.id,
@@ -21,9 +23,10 @@ router.get('/live', verifyToken, async (req, res) => {
       isDemo: false,
       ...doc.data(),
     }));
+    const mergedRealPositions = mergeRecords(realPositions, seededPositions, 'busId');
     const positions = includeDemo
-      ? mergeRecords(realPositions, getDemoLivePositions(), 'busId')
-      : realPositions;
+      ? mergeRecords(mergedRealPositions, getDemoLivePositions(), 'busId')
+      : mergedRealPositions;
 
     res.json({ positions });
   } catch (err) {
@@ -38,6 +41,13 @@ router.get('/bus/:busId', verifyToken, async (req, res) => {
   try {
     if (req.params.busId.startsWith('demo_')) {
       const position = getDemoLivePositions().find((item) => item.busId === req.params.busId);
+      if (!position) {
+        return res.status(404).json({ error: 'Bus not currently tracked' });
+      }
+      return res.json({ position });
+    }
+    if (req.params.busId.startsWith('seed_bus_')) {
+      const position = (await getSeedFleetLivePositions(db)).find((item) => item.busId === req.params.busId);
       if (!position) {
         return res.status(404).json({ error: 'Bus not currently tracked' });
       }

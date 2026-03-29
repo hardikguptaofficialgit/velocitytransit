@@ -1,5 +1,6 @@
 const { auth, db } = require('../config/firebase');
-const { getDemoLivePositions } = require('../services/demoTransit');
+const { getDemoLivePositions, mergeRecords } = require('../services/demoTransit');
+const { getSeedFleetLivePositions } = require('../services/seedFleetSimulator');
 
 /**
  * Socket.io real-time tracking handler.
@@ -139,10 +140,10 @@ function setupTracking(io) {
         const snapshot = await db.collection('liveLocations')
           .where('isOnline', '==', true)
           .get();
-        const positions = [
-          ...getDemoLivePositions(),
-          ...snapshot.docs.map(doc => ({ id: doc.id, source: 'real', isDemo: false, ...doc.data() })),
-        ];
+        const seededPositions = await getSeedFleetLivePositions(db);
+        const realPositions = snapshot.docs.map(doc => ({ id: doc.id, source: 'real', isDemo: false, ...doc.data() }));
+        const mergedRealPositions = mergeRecords(realPositions, seededPositions, 'busId');
+        const positions = mergeRecords(mergedRealPositions, getDemoLivePositions(), 'busId');
         socket.emit('live:positions', positions);
       } catch (err) {
         socket.emit('error', { message: err.message });

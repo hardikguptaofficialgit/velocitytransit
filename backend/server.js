@@ -4,6 +4,8 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
+const { db } = require('./config/firebase');
+const { startSeedFleetSimulator } = require('./services/seedFleetSimulator');
 
 // ── Firebase init (must be before route imports) ──
 require('./config/firebase');
@@ -56,6 +58,7 @@ app.get('/api/health', (req, res) => {
 
 // ── Start server ──
 const PORT = process.env.PORT || 4000;
+const seedFleetSimulator = startSeedFleetSimulator({ db, io });
 server.listen(PORT, () => {
   console.log(`
   ╔══════════════════════════════════════╗
@@ -65,4 +68,9 @@ server.listen(PORT, () => {
   ║   Firebase: connected                ║
   ╚══════════════════════════════════════╝
   `);
+});
+
+process.on('SIGINT', () => {
+  seedFleetSimulator.stop();
+  process.exit(0);
 });
